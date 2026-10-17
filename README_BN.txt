@@ -1,4 +1,4 @@
-Cylinder Radar Launcher — Combined Edition 1.1.0
+Cylinder Radar Launcher 1.2.0 (Wallpaper + Invisible Lock) — নতুন কী: CHANGELOG_BN.txt দেখুন
 ================================================
 
 এই সংস্করণটি আপনার দেওয়া CylinderRadarLauncher-v1.zip ও v0.2.0 ফাইলগুলো পর্যালোচনা করে তৈরি করা একক Android Studio প্রজেক্ট।

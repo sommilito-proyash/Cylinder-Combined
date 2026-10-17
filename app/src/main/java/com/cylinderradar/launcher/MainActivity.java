@@ -11,6 +11,20 @@ import android.content.IntentFilter;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.app.WallpaperManager;
+import android.graphics.Color;
+import android.view.KeyEvent;
+import android.view.ViewGroup;
+import android.view.WindowInsets;
+import android.view.inputmethod.EditorInfo;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.text.method.PasswordTransformationMethod;
+import android.widget.ArrayAdapter;
+import android.widget.AdapterView;
+import android.widget.ImageView;
+import android.widget.ListView;
+import android.widget.TextView;
 import android.provider.Settings;
 import android.text.InputType;
 import android.view.View;
@@ -36,9 +50,7 @@ public class MainActivity extends Activity {
         store = new Store(this);
         view = new LauncherView(this, store);
         setContentView(view);
-        Window w = getWindow();
-        w.setStatusBarColor(0xFF010607);
-        w.setNavigationBarColor(0xFF010807);
+        setupWindow();
 
         IntentFilter f = new IntentFilter();
         f.addAction(Intent.ACTION_PACKAGE_ADDED);
@@ -51,6 +63,33 @@ public class MainActivity extends Activity {
         };
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(pkgReceiver, f, Context.RECEIVER_EXPORTED);
         else registerReceiver(pkgReceiver, f);
+    }
+
+    /** Transparent, edge-to-edge window so the live wallpaper (Matrix-Radar) shows behind the launcher. */
+    @SuppressWarnings("deprecation")
+    private void setupWindow() {
+        Window w = getWindow();
+        w.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER);
+        w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        w.setStatusBarColor(Color.TRANSPARENT);
+        w.setNavigationBarColor(Color.TRANSPARENT);
+        if (Build.VERSION.SDK_INT >= 29) {
+            w.setStatusBarContrastEnforced(false);
+            w.setNavigationBarContrastEnforced(false);
+        }
+        if (Build.VERSION.SDK_INT >= 30) {
+            w.setDecorFitsSystemWindows(false);
+        } else {
+            view.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        }
+        view.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            @Override public WindowInsets onApplyWindowInsets(View v, WindowInsets in) {
+                view.setInsets(in.getSystemWindowInsetTop(), in.getSystemWindowInsetBottom());
+                return in;
+            }
+        });
+        view.requestApplyInsets();
     }
 
     @Override protected void onDestroy() {
@@ -148,14 +187,20 @@ public class MainActivity extends Activity {
         }).show();
     }
 
+    private static final String[] DIM_NAMES = {"স্বচ্ছ (ওয়ালপেপার বেশি দেখা যাবে)", "ভারসাম্য", "গাঢ় (সলিড)"};
+
     void showSettings() {
         final boolean analog = store.analog();
         String[] items = {
                 "হোম স্ক্রিনের অ্যাপ নির্বাচন",
-                "হিডেন অ্যাপ ম্যানেজ করুন (PIN প্রয়োজন)",
+                "হিডেন অ্যাপ ম্যানেজ করুন (লক প্রয়োজন)",
                 "রাডার / সিলিন্ডারের রং",
-                analog ? "ঘড়ি: অ্যানালগ → ডিজিটাল" : "ঘড়ি: ডিজিটাল → অ্যানালগ",
-                store.hasPassword() ? "হিডেন পাসওয়ার্ড পরিবর্তন" : "হিডেন পাসওয়ার্ড সেট করুন",
+                analog ? "ঘড়ি: অ্যানালগ → ডিজিটাল" : "ঘড়ি: ডিজিটাল → অ্যানালগ",
+                store.hasPassword() ? "ভল্ট লক পরিবর্তন (PIN / প্যাটার্ন)" : "ভল্ট লক সেট করুন (PIN / প্যাটার্ন)",
+                "লঞ্চার ব্যাকগ্রাউন্ড: " + DIM_NAMES[store.dim()],
+                "ওয়ালপেপার-স্ক্রিনে ঘড়ি: " + (store.wallClock() ? "চালু" : "বন্ধ"),
+                "PIN প্যাড এলোমেলো করা: " + (store.randomKeypad() ? "চালু" : "বন্ধ"),
+                "ওয়ালপেপার বদলান",
                 "ডিফল্ট লঞ্চার সেটিংস",
                 "জেসচার ও ব্যবহারবিধি"
         };
@@ -166,12 +211,91 @@ public class MainActivity extends Activity {
                 else if (which == 2) chooseColor();
                 else if (which == 3) { store.setAnalog(!analog); view.invalidate(); }
                 else if (which == 4) changePassword();
-                else if (which == 5) {
+                else if (which == 5) { store.setDim((store.dim() + 1) % 3); toast(DIM_NAMES[store.dim()]); view.invalidate(); }
+                else if (which == 6) { store.setWallClock(!store.wallClock()); view.invalidate(); }
+                else if (which == 7) { store.setRandomKeypad(!store.randomKeypad()); toast(store.randomKeypad() ? "PIN প্যাড এলোমেলো হবে" : "PIN প্যাড সাধারণ থাকবে"); }
+                else if (which == 8) chooseWallpaper();
+                else if (which == 9) {
                     try { startActivity(new Intent(Settings.ACTION_HOME_SETTINGS)); }
                     catch (Exception e) { startActivity(new Intent(Settings.ACTION_SETTINGS)); }
                 } else showHelp();
             }
         }).setNegativeButton("বন্ধ", null).show();
+    }
+
+    private void chooseWallpaper() {
+        builder().setTitle("ওয়ালপেপার")
+                .setItems(new String[]{"লাইভ ওয়ালপেপার (Matrix-Radar ইত্যাদি)", "ছবির ওয়ালপেপার"}, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int which) {
+                        try {
+                            if (which == 0) startActivity(new Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER));
+                            else startActivity(Intent.createChooser(new Intent(Intent.ACTION_SET_WALLPAPER), "Wallpaper"));
+                        } catch (Exception e) { toast("এই ফোনে খোলা যাচ্ছে না"); }
+                    }
+                }).setNegativeButton("বন্ধ", null).show();
+    }
+
+    // ---- app search ----------------------------------------------------------------------------
+    void showSearch() {
+        final ArrayList<AppItem> pool = new ArrayList<>();
+        Set<String> hidden = new HashSet<>(store.list("hidden"));
+        for (AppItem it : view.allApps) if (!hidden.contains(it.key)) pool.add(it);   // vault apps never appear here
+        final ArrayList<AppItem> shown = new ArrayList<>(pool);
+        final EditText et = new EditText(this);
+        et.setHint("অ্যাপ খুঁজুন…");
+        et.setSingleLine(true);
+        et.setImeOptions(EditorInfo.IME_ACTION_GO);
+        final ListView lv = new ListView(this);
+        final ArrayAdapter<AppItem> ad = new ArrayAdapter<AppItem>(this, 0, shown) {
+            @Override public View getView(int pos, View cv, ViewGroup parent) {
+                LinearLayout row = new LinearLayout(MainActivity.this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+                row.setPadding(dp(8), dp(6), dp(8), dp(6));
+                ImageView iv = new ImageView(MainActivity.this);
+                AppItem it = getItem(pos);
+                iv.setImageBitmap(it.icon);
+                row.addView(iv, new LinearLayout.LayoutParams(dp(36), dp(36)));
+                TextView tv = new TextView(MainActivity.this);
+                tv.setText(it.label);
+                tv.setTextColor(Color.WHITE);
+                tv.setTextSize(16);
+                tv.setPadding(dp(14), 0, 0, 0);
+                row.addView(tv);
+                return row;
+            }
+        };
+        lv.setAdapter(ad);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(16), dp(8), dp(16), 0);
+        box.addView(et);
+        box.addView(lv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(320)));
+        final AlertDialog dlg = builder().setTitle("সার্চ").setView(box).setNegativeButton("বন্ধ", null).create();
+        et.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void afterTextChanged(Editable s) {
+                String q = s.toString().trim().toLowerCase();
+                shown.clear();
+                for (AppItem it : pool) if (q.isEmpty() || it.label.toLowerCase().contains(q)) shown.add(it);
+                ad.notifyDataSetChanged();
+            }
+        });
+        lv.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override public void onItemClick(AdapterView<?> p, View v, int pos, long id) {
+                dlg.dismiss();
+                launch(shown.get(pos), view.getWidth() / 2f, view.getHeight() / 2f);
+            }
+        });
+        et.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+            @Override public boolean onEditorAction(TextView v, int action, KeyEvent ev) {
+                if (!shown.isEmpty()) { dlg.dismiss(); launch(shown.get(0), view.getWidth() / 2f, view.getHeight() / 2f); }
+                return true;
+            }
+        });
+        dlg.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
+        dlg.show();
     }
 
     /** Bulk-select favourite apps for the first cylinder. Hidden apps are never offered here. */
@@ -283,24 +407,33 @@ public class MainActivity extends Activity {
 
     void showHelp() {
         builder().setTitle("Gestures")
-                .setMessage("• সিলিন্ডারের ওপর ডানে/বামে টেনে ঘোরান; ছেড়ে দিলে ইনর্শিয়া ও স্ন্যাপ কাজ করবে।\n\n"
+                .setMessage("• ওয়ালপেপার-স্ক্রিনে ওপরে সোয়াইপ করলে লঞ্চার ভেসে উঠবে; HOME সিলিন্ডারে নিচে সোয়াইপ/Back/Home দিলে ওয়ালপেপারে ফেরা যাবে।\n\n"
+                        + "• সিলিন্ডারের ওপর ডানে/বামে টেনে ঘোরান; ছেড়ে দিলে ইনর্শিয়া ও স্ন্যাপ কাজ করবে।\n\n"
                         + "• ওপর/নিচে সোয়াইপ করলে HOME ও ALL APPS সিলিন্ডার বদলাবে।\n\n"
                         + "• ঘড়ি বা নিচের পেজ-লেবেলের অংশে বামে সোয়াইপ করলে পরের সিলিন্ডার আসবে।\n\n"
                         + "• ঘড়ি বা নিচের পেজ-লেবেলের অংশে দ্রুত পরপর ডানে দুইবার সোয়াইপ করলে VAULT-এর পাসওয়ার্ড চাইবে।\n\n"
                         + "• অ্যাপ আইকনে লং-প্রেস করলে Pin/Unpin, Hide, App info ও Uninstall পাওয়া যাবে।\n\n"
+                        + "• উপরে বাঁদিকের ম্যাগনিফায়ারে ট্যাপ করলে অ্যাপ সার্চ (ভল্টের অ্যাপ সার্চে আসে না)।\n\n"
                         + "• Settings থেকে একসঙ্গে Home apps বাছাই, Vault apps ম্যানেজ এবং Digital/Analog clock বদলানো যায়।\n\n"
                         + "• VAULT অ্যাপ খুললে, Back/Home চাপলে বা লঞ্চার ছাড়লে লক হবে; ভুল পাসওয়ার্ড বারবার দিলে সাময়িক বিরতি থাকবে।\n\n"
                         + "• সিস্টেম/MIUI Hidden Apps তালিকা আলাদাভাবে এখানে বেছে নিতে হবে; এই Vault ফোনের অন্য লঞ্চার থেকে অ্যাপ লুকায় না।")
                 .setPositiveButton("OK", null).show();
     }
 
-    // ---- vault password ----------------------------------------------------------------------
-    private EditText passField(String hint) {
-        EditText et = new EditText(this);
-        et.setHint(hint);
-        et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        et.setSingleLine(true);
-        return et;
+    // ---- vault lock (PIN / pattern; nothing typed or drawn is ever shown) ---------------------------
+    private static final class Mask extends PasswordTransformationMethod {
+        @Override public CharSequence getTransformation(final CharSequence src, View v) {
+            return new CharSequence() {
+                @Override public int length() { return src.length(); }
+                @Override public char charAt(int i) { return '\u2022'; }
+                @Override public CharSequence subSequence(int s, int e) {
+                    StringBuilder b = new StringBuilder();
+                    for (int i = s; i < e; i++) b.append('\u2022');
+                    return b;
+                }
+                @Override public String toString() { return subSequence(0, length()).toString(); }
+            };
+        }
     }
 
     private View padded(View v) {
@@ -310,14 +443,45 @@ public class MainActivity extends Activity {
         return f;
     }
 
-    /** Runs {@code ok} only after the correct vault password was entered (or created on first use). */
+    int accentColor() { return LauncherView.COLORS[Math.max(0, Math.min(LauncherView.COLORS.length - 1, store.accent()))]; }
+
+    /** Runs {@code ok} only after the correct vault lock was entered (or created on first use). */
     void authenticate(final Runnable ok) {
-        if (!store.hasPassword()) { createPassword("Create vault password", ok); return; }
+        if (!store.hasPassword()) { createPassword("ভল্ট লক তৈরি করুন", ok); return; }
         long wait = store.lockRemaining();
-        if (wait > 0) { toast("Too many attempts. Try again in " + (wait / 1000 + 1) + "s"); return; }
-        final EditText et = passField("Password");
+        if (wait > 0) { toast("অনেকবার ভুল। " + (wait / 1000 + 1) + " সেকেন্ড পরে চেষ্টা করুন"); return; }
+        String type = store.credType();
+        if ("text".equals(type)) { authenticateLegacyText(ok); return; }
+        final boolean pattern = "pattern".equals(type);
+        LockUi.show(this, pattern, store.pinLength(), store.randomKeypad(), accentColor(), "VAULT",
+                pattern ? "প্যাটার্ন আঁকুন" : "PIN দিন", new LockUi.Listener() {
+            @Override public void onCancel() { }
+            @Override public void onEntry(LockUi.Entry e, String secret) {
+                if (store.check(secret)) {
+                    store.resetFails();
+                    e.dismiss();
+                    ok.run();
+                } else {
+                    store.registerFail();
+                    e.reset();
+                    long w = store.lockRemaining();
+                    if (w > 0) { e.dismiss(); toast("অনেকবার ভুল। " + (w / 1000 + 1) + " সেকেন্ড পরে চেষ্টা করুন"); }
+                    else e.error(pattern ? "ভুল প্যাটার্ন" : "ভুল PIN");
+                }
+            }
+        });
+    }
+
+    /** Old text password: typed into an always-masked field, then the user is offered a PIN / pattern. */
+    private void authenticateLegacyText(final Runnable ok) {
+        final EditText et = new EditText(this);
+        et.setHint("পুরোনো পাসওয়ার্ড");
+        et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        et.setTransformationMethod(new Mask());
+        et.setSingleLine(true);
         final AlertDialog dlg = builder().setTitle("Vault").setView(padded(et))
                 .setPositiveButton("Unlock", null).setNegativeButton("Cancel", null).create();
+        dlg.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
         dlg.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
         dlg.show();
         dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() {
@@ -325,51 +489,79 @@ public class MainActivity extends Activity {
                 if (store.check(et.getText().toString())) {
                     store.resetFails();
                     dlg.dismiss();
-                    ok.run();
+                    offerUpgrade(ok);
                 } else {
                     store.registerFail();
                     et.setText("");
                     long w = store.lockRemaining();
-                    if (w > 0) { dlg.dismiss(); toast("Too many attempts. Try again in " + (w / 1000 + 1) + "s"); }
+                    if (w > 0) { dlg.dismiss(); toast("অনেকবার ভুল। " + (w / 1000 + 1) + " সেকেন্ড পরে চেষ্টা করুন"); }
                     else et.setError("Wrong password");
                 }
             }
         });
     }
 
-    void ensurePassword(final Runnable then) {
-        if (store.hasPassword()) then.run();
-        else createPassword("Create vault password", then);
+    private boolean suppressUpgrade;
+
+    private void offerUpgrade(final Runnable ok) {
+        if (suppressUpgrade) { suppressUpgrade = false; ok.run(); return; }
+        builder().setTitle("ভল্ট লক আপগ্রেড")
+                .setMessage("আরও নিরাপদ PIN বা প্যাটার্ন লক সেট করবেন? (এগুলো স্ক্রিনে কখনও দেখা যায় না)")
+                .setPositiveButton("সেট করুন", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) { chooseLockType("নতুন ভল্ট লক", ok); }
+                })
+                .setNegativeButton("পরে", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) { ok.run(); }
+                }).setCancelable(false).show();
     }
 
-    void createPassword(String title, final Runnable then) {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        final EditText a = passField("New password (min 4 characters)");
-        final EditText b = passField("Repeat password");
-        box.addView(a);
-        box.addView(b);
-        final AlertDialog dlg = builder().setTitle(title).setView(padded(box))
-                .setPositiveButton("Save", null).setNegativeButton("Cancel", null).create();
-        dlg.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
-        dlg.show();
-        dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                String p1 = a.getText().toString(), p2 = b.getText().toString();
-                if (p1.length() < 4) { a.setError("At least 4 characters"); return; }
-                if (!p1.equals(p2)) { b.setError("Passwords do not match"); return; }
-                store.setPassword(p1);
-                dlg.dismiss();
-                toast("Vault password saved");
-                if (then != null) then.run();
+    void ensurePassword(final Runnable then) {
+        if (store.hasPassword()) then.run();
+        else createPassword("ভল্ট লক তৈরি করুন", then);
+    }
+
+    void createPassword(String title, final Runnable then) { chooseLockType(title, then); }
+
+    private void chooseLockType(final String title, final Runnable then) {
+        builder().setTitle(title)
+                .setItems(new String[]{"PIN (৪–৮ সংখ্যা)", "প্যাটার্ন (কমপক্ষে ৪ ডট)"}, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int which) { setupLock(which == 1, then); }
+                }).setNegativeButton("বাতিল", null).show();
+    }
+
+    private void setupLock(final boolean pattern, final Runnable then) {
+        final String[] first = {null};
+        LockUi.show(this, pattern, 0, false, accentColor(), pattern ? "নতুন প্যাটার্ন" : "নতুন PIN",
+                pattern ? "প্যাটার্ন আঁকুন (কমপক্ষে ৪ ডট)" : "৪–৮ সংখ্যার PIN দিয়ে ✓ চাপুন", new LockUi.Listener() {
+            @Override public void onCancel() { }
+            @Override public void onEntry(LockUi.Entry e, String secret) {
+                int n = pattern ? secret.length() - 2 : secret.length();
+                if (first[0] == null) {
+                    if (n < 4) { e.error(pattern ? "কমপক্ষে ৪টি ডট যোগ করুন" : "কমপক্ষে ৪ সংখ্যা দিন"); e.reset(); return; }
+                    first[0] = secret;
+                    e.reset();
+                    e.setTitle("নিশ্চিত করুন");
+                    e.info(pattern ? "একই প্যাটার্ন আবার আঁকুন" : "একই PIN আবার দিন");
+                } else if (first[0].equals(secret)) {
+                    store.setCredential(pattern ? "pattern" : "pin", secret);
+                    e.dismiss();
+                    toast("ভল্ট লক সংরক্ষিত হয়েছে");
+                    if (then != null) then.run();
+                } else {
+                    first[0] = null;
+                    e.reset();
+                    e.setTitle(pattern ? "নতুন প্যাটার্ন" : "নতুন PIN");
+                    e.error("মেলেনি, আবার প্রথম থেকে দিন");
+                }
             }
         });
     }
 
     void changePassword() {
-        if (!store.hasPassword()) { createPassword("Create vault password", null); return; }
+        if (!store.hasPassword()) { createPassword("ভল্ট লক তৈরি করুন", null); return; }
+        suppressUpgrade = true;
         authenticate(new Runnable() {
-            @Override public void run() { createPassword("New vault password", null); }
+            @Override public void run() { suppressUpgrade = false; chooseLockType("নতুন ভল্ট লক", null); }
         });
     }
 }

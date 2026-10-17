@@ -102,6 +102,27 @@ final class Store {
                 && !legacySp.getString("hidden_pin_salt", "").isEmpty();
     }
 
+    /** "pin", "pattern" or "text" (old v1.0/1.1 password; verified through a masked field, then upgraded). */
+    String credType() {
+        if (sp.getString("pw_hash", "").isEmpty()) return "text";
+        return sp.getString("cred_type", "text");
+    }
+    int pinLength() { return sp.getInt("pin_len", 0); }
+
+    /** Stores a PIN ("1234") or pattern secret ("p:0147"). Only a salted PBKDF2 hash is kept. */
+    void setCredential(String type, String secret) {
+        setPassword(secret);
+        sp.edit().putString("cred_type", type).putInt("pin_len", "pin".equals(type) ? secret.length() : 0).apply();
+    }
+
+    boolean randomKeypad() { return sp.getBoolean("rand_pad", false); }
+    void setRandomKeypad(boolean b) { sp.edit().putBoolean("rand_pad", b).apply(); }
+    boolean wallClock() { return sp.getBoolean("wall_clock", true); }
+    void setWallClock(boolean b) { sp.edit().putBoolean("wall_clock", b).apply(); }
+    /** 0 = airy (see-through), 1 = balanced, 2 = solid dark. */
+    int dim() { return sp.getInt("dim", 1); }
+    void setDim(int i) { sp.edit().putInt("dim", i).apply(); }
+
     void setPassword(String pw) {
         byte[] salt = new byte[16];
         new SecureRandom().nextBytes(salt);

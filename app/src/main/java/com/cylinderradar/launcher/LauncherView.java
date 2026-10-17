@@ -16,6 +16,7 @@ import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.AdaptiveIconDrawable;
 import android.graphics.drawable.Drawable;
+import android.app.WallpaperManager;
 import android.provider.MediaStore;
 import android.provider.Settings;
 import android.net.Uri;
@@ -41,10 +42,10 @@ import java.util.TimeZone;
  */
 public class LauncherView extends View {
     static final int HOME = 0, ALL = 1, VAULT = 2;
-    static final int[] COLORS = {0xFF39FF88, 0xFF00BEFF, 0xFFD24BFF, 0xFFFF414B, 0xFFFF9123, 0xFF00EBE1};
-    static final String[] COLOR_NAMES = {"Radar Green", "Electric Blue", "Violet", "Red", "Amber", "Cyan"};
+    static final int[] COLORS = {0xFF39FF88, 0xFF00BEFF, 0xFFD24BFF, 0xFFFF414B, 0xFFFF9123, 0xFF00EBE1, 0xFFFF4FA3, 0xFFFFD60A};
+    static final String[] COLOR_NAMES = {"Radar Green", "Electric Blue", "Violet", "Red", "Amber", "Cyan", "Hot Pink", "Gold"};
 
-    private static final int MODE_NONE = 0, MODE_ROT = 1, MODE_VERT = 2, MODE_NAV = 3;
+    private static final int MODE_NONE = 0, MODE_ROT = 1, MODE_VERT = 2, MODE_NAV = 3, MODE_REVEAL = 4;
 
     /** One cylinder worth of apps and its rotation state. */
     static final class Page {
@@ -71,6 +72,13 @@ public class LauncherView extends View {
     final float d;
     final ArrayList<AppItem> allApps = new ArrayList<>();
     final Page[] pages = {new Page(), new Page(), new Page()};
+
+    /** 0 = wallpaper home (live wallpaper visible, launcher hidden), 1 = launcher fully shown. */
+    float reveal = 0f, revealTarget = 0f;
+    int insetTop = 0, insetBottom = 0;
+    long wallSince = 0L;
+    int builtDim = -1, lastSlot = 0;
+    private static final float[] DIM_ALPHA = {0.55f, 0.82f, 1f};
 
     int cur = HOME, prev = -1, transDir = 1;
     float trans = 1f;
@@ -128,7 +136,7 @@ public class LauncherView extends View {
         d = a.getResources().getDisplayMetrics().density;
         thin = Typeface.create("sans-serif-thin", Typeface.NORMAL);
         medium = Typeface.create("sans-serif-medium", Typeface.NORMAL);
-        setBackgroundColor(0xFF010607);
+        wallSince = System.currentTimeMillis();
         reload();
     }
 
@@ -311,11 +319,40 @@ public class LauncherView extends View {
     void onHome() {
         lockNow();
         goTo(HOME);
+        hideToWall();
     }
 
     boolean onBack() {
+        if (reveal <= 0.01f && revealTarget == 0f) return false;
         if (cur != HOME) { goTo(HOME); return true; }
-        return false;
+        hideToWall();
+        return true;
+    }
+
+    /** Slide the cylinder launcher away and show the bare (live) wallpaper. */
+    void hideToWall() {
+        lockNow();
+        revealTarget = 0f;
+        wallSince = System.currentTimeMillis();
+        invalidate();
+    }
+
+    void showLauncher() {
+        revealTarget = 1f;
+        invalidate();
+    }
+
+    void setInsets(int top, int bottom) {
+        insetTop = top; insetBottom = bottom;
+        if (w > 0) onSizeChanged(w, h, w, h);
+        invalidate();
+    }
+
+    private void sendWallTap(float x, float y) {
+        try {
+            WallpaperManager.getInstance(getContext()).sendWallpaperCommand(getWindowToken(),
+                    WallpaperManager.COMMAND_TAP, (int) x, (int) y, 0, null);
+        } catch (Throwable ignored) { }
     }
 
     private boolean registerRightSwipeForVault() {
@@ -378,7 +415,7 @@ public class LauncherView extends View {
         orbRx = rw * 0.80f;
         orbRy = orbRx * 0.20f;
         faceR = Math.min(w * 0.17f, h * 0.085f);
-        faceCy = Math.max(orbCy - orbRy - faceR - 22 * d, faceR + 64 * d);
+        faceCy = Math.max(orbCy - orbRy - faceR - 22 * d, faceR + 64 * d + insetTop);
         layerBack = null;
         layerFront = null;
     }
@@ -417,13 +454,15 @@ public class LauncherView extends View {
     /** Pre-renders everything that never changes frame to frame (background, glass, beam, rims). */
     void buildLayers(int acc) {
         builtAccent = acc;
+        builtDim = store.dim();
+        float da = DIM_ALPHA[Math.max(0, Math.min(2, builtDim))];
         layerBack = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         layerFront = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         Canvas b = new Canvas(layerBack);
         Paint q = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         // background
-        q.setShader(new LinearGradient(0, 0, 0, h, new int[]{0xFF010607, 0xFF03130F, 0xFF010807}, null, Shader.TileMode.CLAMP));
+        q.setShader(new LinearGradient(0, 0, 0, h, new int[]{ac(0x010607, (int) (255 * da)), ac(0x03130F, (int) (255 * da)), ac(0x010807, (int) (255 * da))}, null, Shader.TileMode.CLAMP));
         b.drawRect(0, 0, w, h, q);
         q.setShader(new RadialGradient(cx, (ty + by) / 2f, h * 0.55f,
                 new int[]{ac(acc, 0x3A), ac(acc, 0x10), ac(acc, 0x00)}, new float[]{0f, 0.55f, 1f}, Shader.TileMode.CLAMP));
@@ -562,11 +601,38 @@ public class LauncherView extends View {
         long ns = System.nanoTime();
         float dt = lastNs == 0 ? 0.016f : Math.min(0.05f, (ns - lastNs) / 1e9f);
         lastNs = ns;
-        int acc = COLORS[Math.max(0, Math.min(COLORS.length - 1, store.accent()))];
-        if (layerBack == null || acc != builtAccent) buildLayers(acc);
-        step(dt);
         long now = System.currentTimeMillis();
+        stepReveal(dt);
+        float rv = ease(reveal);
+        if (rv > 0.003f) {
+            int acc = COLORS[Math.max(0, Math.min(COLORS.length - 1, store.accent()))];
+            if (layerBack == null || acc != builtAccent || store.dim() != builtDim) buildLayers(acc);
+            step(dt);
+            int sc = -1;
+            if (rv < 0.999f) {
+                sc = c.saveLayerAlpha(0, 0, w, h, (int) (255 * rv));
+                c.translate(0, (1f - rv) * h * 0.06f);
+            }
+            drawLauncher(c, now, acc);
+            if (sc >= 0) c.restoreToCount(sc);
+        }
+        if (rv < 0.999f) {
+            int acc = COLORS[Math.max(0, Math.min(COLORS.length - 1, store.accent()))];
+            drawWall(c, now, acc, 1f - rv);
+        }
+        if (rv > 0.003f || reveal != revealTarget || touching) postInvalidateOnAnimation();
+        else if (now - wallSince < 7000L) postInvalidateOnAnimation();      // hint pulse
+        else postInvalidateDelayed(1000);                                 // idle on wallpaper: 1 redraw/sec (clock)
+    }
 
+    void stepReveal(float dt) {
+        if (mode == MODE_REVEAL && touching) return;
+        float sp = dt / 0.36f;
+        if (reveal < revealTarget) reveal = Math.min(revealTarget, reveal + sp);
+        else if (reveal > revealTarget) reveal = Math.max(revealTarget, reveal - sp);
+    }
+
+    void drawLauncher(Canvas c, long now, int acc) {
         c.drawBitmap(layerBack, 0, 0, null);
         drawClock(c, now, acc);
 
@@ -582,7 +648,59 @@ public class LauncherView extends View {
 
         drawRadar(c, now, acc);
         drawChrome(c, now, acc, tr ? e : 1f);
-        postInvalidateOnAnimation();
+    }
+
+    /** Wallpaper screen: nothing but a small clock and a swipe-up hint, so the live wallpaper stays the star. */
+    void drawWall(Canvas c, long now, int acc, float alpha) {
+        if (alpha <= 0.01f) return;
+        cal.setTimeInMillis(now);
+        if (store.wallClock()) {
+            boolean is24 = DateFormat.is24HourFormat(getContext());
+            int H = cal.get(Calendar.HOUR_OF_DAY), M = cal.get(Calendar.MINUTE);
+            int hh = is24 ? H : ((H + 11) % 12 + 1);
+            String t = is24 ? String.format(Locale.US, "%02d:%02d", hh, M) : String.format(Locale.US, "%d:%02d", hh, M);
+            String ds = new SimpleDateFormat("EEE, d MMM", Locale.getDefault()).format(cal.getTime()).toUpperCase(Locale.getDefault());
+            textP.setTextAlign(Paint.Align.CENTER);
+            textP.setTypeface(thin);
+            textP.setTextSize(64 * d);
+            textP.setLetterSpacing(0.02f);
+            textP.setColor(ac(0xEFFFF6, (int) (235 * alpha)));
+            textP.setShadowLayer(16 * d, 0, 0, ac(acc, (int) (200 * alpha)));
+            c.drawText(t, cx, insetTop + 96 * d, textP);
+            textP.setTypeface(medium);
+            textP.setTextSize(12 * d);
+            textP.setLetterSpacing(0.2f);
+            textP.setColor(ac(0xFFFFFF, (int) (190 * alpha)));
+            c.drawText(ds, cx, insetTop + 122 * d, textP);
+            textP.clearShadowLayer();
+            textP.setLetterSpacing(0f);
+        }
+        // swipe-up hint: two chevrons that pulse upward, then settle
+        boolean pulse = now - wallSince < 7000L;
+        float ph = pulse ? (now % 1500L) / 1500f : 0.5f;
+        float base = h - insetBottom - 58 * d - reveal * 40 * d;
+        p.setShader(null);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeCap(Paint.Cap.ROUND);
+        p.setStrokeWidth(2.2f * d);
+        for (int i = 0; i < 2; i++) {
+            float f = pulse ? Math.max(0f, 1f - Math.abs(ph - i * 0.28f - 0.2f) * 2.6f) : 0.35f;
+            p.setColor(ac(acc, (int) ((70 + 185 * f) * alpha)));
+            float y = base - i * 11 * d - (pulse ? ph * 6 * d : 0);
+            path.reset();
+            path.moveTo(cx - 11 * d, y + 5 * d);
+            path.lineTo(cx, y - 3 * d);
+            path.lineTo(cx + 11 * d, y + 5 * d);
+            c.drawPath(path, p);
+        }
+        p.setStrokeCap(Paint.Cap.BUTT);
+        textP.setTextAlign(Paint.Align.CENTER);
+        textP.setTypeface(medium);
+        textP.setTextSize(9.5f * d);
+        textP.setLetterSpacing(0.3f);
+        textP.setColor(ac(0xFFFFFF, (int) (110 * alpha)));
+        c.drawText("SWIPE UP", cx, base + 22 * d, textP);
+        textP.setLetterSpacing(0f);
     }
 
     void step(float dt) {
@@ -903,16 +1021,24 @@ public class LauncherView extends View {
         textP.setTextSize(12 * d);
         textP.setLetterSpacing(0.18f);
         textP.setColor(ac(0xFFFFFF, 0xC0));
-        c.drawText(dateStr, 20 * d, 34 * d, textP);
+        c.drawText(dateStr, 46 * d, insetTop + 34 * d, textP);
+        // search glass (tap = app search)
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeCap(Paint.Cap.ROUND);
+        p.setStrokeWidth(1.8f * d);
+        p.setColor(ac(acc, 0xE0));
+        c.drawCircle(27 * d, insetTop + 29.5f * d, 5.5f * d, p);
+        c.drawLine(31 * d, insetTop + 33.5f * d, 35 * d, insetTop + 37.5f * d, p);
+        p.setStrokeCap(Paint.Cap.BUTT);
         // gear (three dots)
         p.setStyle(Paint.Style.FILL);
         p.setColor(ac(acc, 0xE0));
-        for (int i = 0; i < 3; i++) c.drawCircle(w - 26 * d, (22 + i * 10) * d, 2.4f * d, p);
+        for (int i = 0; i < 3; i++) c.drawCircle(w - 26 * d, insetTop + (22 + i * 10) * d, 2.4f * d, p);
 
         // page labels
         int count = vaultOpen || cur == VAULT || prev == VAULT ? 3 : 2;
         String[] names = {"HOME", "ALL APPS", "VAULT"};
-        float ly = Math.min(by + rh + 54 * d, h - 40 * d);
+        float ly = Math.min(by + rh + 54 * d, h - insetBottom - 40 * d);
         textP.setTextSize(12.5f * d);
         textP.setLetterSpacing(0.16f);
         float gap = 26 * d, total = 0;
@@ -983,7 +1109,7 @@ public class LauncherView extends View {
                 lpFired = false;
                 touching = true;
                 zone = (y > ty - rh * 1.1f && y < by + rh * 0.9f) ? 1 : 0;
-                pressed = prev < 0 ? hit(x, y) : -1;
+                pressed = (prev < 0 && revealTarget >= 1f && reveal > 0.95f) ? hit(x, y) : -1;
                 pages[cur].vel = 0f;
                 removeCallbacks(lpRun);
                 postDelayed(lpRun, 480);
@@ -994,10 +1120,21 @@ public class LauncherView extends View {
                     if (Math.max(ax, ay) > slop) {
                         removeCallbacks(lpRun);
                         pressed = -1;
-                        mode = ay > ax * 1.2f ? MODE_VERT : (zone == 1 ? MODE_ROT : MODE_NAV);
+                        if (revealTarget < 1f && reveal < 0.95f) {
+                            // wallpaper screen: only a vertical drag (swipe up) does anything
+                            mode = (ay > ax && y < downY) ? MODE_REVEAL : MODE_NAV;
+                            if (mode == MODE_NAV) mode = MODE_NONE - 1; // ignored sideways drag
+                        } else {
+                            mode = ay > ax * 1.2f ? MODE_VERT : (zone == 1 ? MODE_ROT : MODE_NAV);
+                        }
                     }
                 }
-                if (mode == MODE_ROT) pages[cur].rot += (x - lastX) / (rw * 0.93f);
+                if (mode == MODE_REVEAL) reveal = Math.max(0f, Math.min(1f, (downY - y) / (h * 0.32f)));
+                if (mode == MODE_ROT) {
+                    pages[cur].rot += (x - lastX) / (rw * 0.93f);
+                    int slot = Math.round(pages[cur].rot / pages[cur].grid);
+                    if (slot != lastSlot) { lastSlot = slot; performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK); }
+                }
                 if (mode != MODE_NONE) lastX = x;
                 return true;
             case MotionEvent.ACTION_UP: {
@@ -1009,6 +1146,17 @@ public class LauncherView extends View {
                 vt = null;
                 if (lpFired) { pressed = -1; return true; }
                 float dx = x - downX, dy = y - downY;
+                if (mode == MODE_REVEAL) {
+                    revealTarget = (reveal > 0.28f || vy < -900 * d) && vy < 1200 * d ? 1f : 0f;
+                    if (revealTarget == 0f) wallSince = System.currentTimeMillis();
+                    pressed = -1;
+                    return true;
+                }
+                if (mode < MODE_NONE) { pressed = -1; return true; }
+                if (mode == MODE_NONE && revealTarget < 1f && reveal < 0.95f) {
+                    sendWallTap(x, y);   // let the live wallpaper react to taps
+                    return true;
+                }
                 if (mode == MODE_NONE) {
                     lastRight = 0L;
                     if (pressed >= 0 && pressed < pages[cur].items.size()) {
@@ -1032,7 +1180,7 @@ public class LauncherView extends View {
                 } else if (mode == MODE_VERT) {
                     lastRight = 0L;
                     if (dy < -50 * d || vy < -900 * d) goTo(cur + 1);
-                    else if (dy > 50 * d || vy > 900 * d) goTo(cur - 1);
+                    else if (dy > 50 * d || vy > 900 * d) { if (cur == HOME) hideToWall(); else goTo(cur - 1); }
                 } else if (mode == MODE_NAV) {
                     if (dx < -60 * d || vx < -800 * d) { lastRight = 0L; goTo(cur + 1); }
                     else if (dx > 60 * d || vx > 800 * d) onRightSwipe();
@@ -1044,6 +1192,7 @@ public class LauncherView extends View {
             case MotionEvent.ACTION_CANCEL:
                 removeCallbacks(lpRun);
                 touching = false;
+                if (mode == MODE_REVEAL) revealTarget = reveal > 0.5f ? 1f : 0f;
                 if (vt != null) { vt.recycle(); vt = null; }
                 pressed = -1;
                 return true;
@@ -1053,7 +1202,8 @@ public class LauncherView extends View {
     }
 
     void tapChrome(float x, float y) {
-        if (x > w - 64 * d && y < 64 * d) { act.showSettings(); return; }
+        if (x > w - 64 * d && y < insetTop + 64 * d) { act.showSettings(); return; }
+        if (x < 90 * d && y < insetTop + 64 * d) { act.showSearch(); return; }
         int count = vaultOpen ? 3 : 2;
         for (int i = 0; i < count; i++) {
             if (labelRects[i].contains(x, y)) { goTo(i); return; }
