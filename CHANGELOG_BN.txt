@@ -1,0 +1,14 @@
+Cylinder Radar Launcher — Combined Edition 1.1.0
+- v1 layered cylinder graphics and interaction engine retained.
+- Bulk home-app selection added to Settings.
+- Password-protected bulk Vault-app management added to Settings.
+- Retained PBKDF2 password hashing and progressive failed-attempt lockout.
+- Protected task preview while leaving an open Vault; clear protection after returning to the locked launcher.
+- Added a 60-second idle timeout for the private cylinder, reset by interaction.
+- Gradle wrapper aligned to 8.9 for Android Gradle Plugin 8.7.3.
+- versionCode increased to 3, versionName set to 1.1.0-combined.
+- Added a GitHub Actions build workflow and mobile-friendly ZIP-build instructions.
+- Added preference migration for v0.2.0 Home/Hidden app lists, clock theme and legacy PIN; successful legacy PIN check upgrades it to PBKDF2.
+- Hiding/unhiding now applies to all launcher shortcuts belonging to the same app package.
+- Kept secure-window protection active while the Vault cylinder transitions away, then cleared hidden icons.
+- Enabled the double-right-swipe vault gesture across cylinder and background touch zones while keeping single-swipe cylinder rotation.

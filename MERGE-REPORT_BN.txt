@@ -1,0 +1,25 @@
+ফাইল সমন্বয় প্রতিবেদন — Cylinder Radar Launcher Combined 1.1.0
+==============================================================
+
+পর্যালোচিত ইনপুট
+---------------
+1. CylinderRadarLauncher-v1.zip — পূর্ণ multi-class Android project: MainActivity, LauncherView, Store, AppItem, Gradle wrapper, resources ও manifest.
+2. CylinderRadarLauncher-MainActivity-v0.2.0.java — একক-ফাইল UI, PIN-based private cylinder, home app selection, app list management, clock/theme preferences.
+3. CylinderRadarLauncher-GitHub-Root-v0.2.0.zip — উপরের v0.2.0 MainActivity-র standalone Android project package.
+
+পর্যালোচনার ফল
+--------------
+- ইনপুট 2 ও ইনপুট 3-এর MainActivity.java একই ফাইল (SHA-256: f4a314595aa1f09228e6515e283288852b8ebe4c219f4ac79c792bb8164cf2ef)। তাই ওই দুই কপিকে আলাদা ইঞ্জিন হিসেবে জোড়া দেওয়া হয়নি।
+- v1-এ পূর্ণাঙ্গ 3D cylinder renderer, clock drawing, inertia/snap gestures, app long-press menu, PIN store ও Gradle wrapper ছিল। এটিই visual/technical base রাখা হয়েছে।
+- v0.2.0 থেকে bulk Home selection ও password-protected Vault manager UI-এর সুবিধা v1-এর MainActivity/Store/LauncherView architecture-এ পোর্ট করা হয়েছে।
+- পুরোনো v0.2.0 preference namespace থেকে Home/Hidden app lists, clock style/theme এবং পুরোনো PIN hash migration যোগ হয়েছে। পুরোনো PIN একবার সঠিক হলে PBKDF2 hash-এ আপগ্রেড হয়।
+- Vault idle timeout (৬০ সেকেন্ড), একই app package-এর সব launcher shortcut একসঙ্গে hide/unhide, ডানদিকে ডাবল-swipe Vault gesture ও transition চলাকালে task preview protection যোগ/সংশোধন করা হয়েছে।
+- একই কাজের দুটি custom Canvas engine একত্র না করায় touch handling, page state, clock animation এবং UI lifecycle-এর সংঘাত এড়ানো হয়েছে।
+
+যাচাই
+----
+- Java ফাইলগুলোর brace/parenthesis balance এবং javac parser-level diagnostics পরীক্ষা করা হয়েছে; syntax-shaped error পাওয়া যায়নি।
+- Android XML files well-formed কি না এবং resource references পরীক্ষা করা হয়েছে।
+- ZIP integrity (`unzip -t`), সব ৫টি Android XML file parsing, manifest icon resource path, এবং মূল project file উপস্থিতি যাচাই করা হয়েছে।
+- Java source-এ brace/parenthesis balance সঠিক; javac syntax-oriented diagnostics পরীক্ষা করা হয়েছে, তবে Android SDK classpath না থাকায় full compile শেষ করা যায়নি।
+- এই build container-এ Android SDK নেই; তাই প্রকৃত APK compile/runtime/device test এখানে করা হয়নি। GitHub Actions অথবা Android Studio-তে assembleDebug সফল হওয়া চূড়ান্ত build verification।

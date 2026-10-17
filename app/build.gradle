@@ -1,0 +1,21 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.cylinderradar.launcher'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.cylinderradar.launcher'
+        minSdk 26
+        targetSdk 34
+        versionCode 3
+        versionName '1.1.0-combined'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    buildTypes {
+        release { minifyEnabled false }
+    }
+    lint { abortOnError false; checkReleaseBuilds false }
+}
