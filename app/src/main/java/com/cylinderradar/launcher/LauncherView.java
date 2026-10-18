@@ -53,21 +53,6 @@ public class LauncherView extends View {
         invalidate();
     }
 
-    public void filterApps(String query) {
-        this.searchQuery = query;
-        if (query.isEmpty()) {
-            filteredList = appList;
-        } else {
-            filteredList = new java.util.ArrayList<>();
-            for (AppItem item : appList) {
-                if (item.title.toLowerCase().contains(query.toLowerCase())) {
-                    filteredList.add(item);
-                }
-            }
-        }
-        invalidate();
-    }
-
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -77,14 +62,12 @@ public class LauncherView extends View {
         float centerX = width / 2f;
         float centerY = height / 2f;
 
-        // ১. উইজেট সেকশন: ডিজিটাল ক্লক রেন্ডার করা (উপরে)
         paint.setTextSize(64f);
         paint.setARGB(255, 255, 255, 255);
         paint.setTextAlign(Paint.Align.CENTER);
         String currentTime = new SimpleDateFormat("hh:mm a", Locale.getDefault()).format(new Date());
         canvas.drawText(currentTime, centerX, 150f, paint);
 
-        // অ্যানিমেশন প্রোগ্রেস আপডেট
         if (isAnimatingOpen && cylinderOpenProgress < 1f) {
             cylinderOpenProgress += 0.04f;
             if (cylinderOpenProgress > 1f) cylinderOpenProgress = 1f;
