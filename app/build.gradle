@@ -7,8 +7,8 @@ android {
         applicationId 'com.cylinderradar.launcher'
         minSdk 26
         targetSdk 34
-        versionCode 4
-        versionName '1.2.0-wallpaper-lock'
+        versionCode 6
+        versionName '1.4.0-icon-burst'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8

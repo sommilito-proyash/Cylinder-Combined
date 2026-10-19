@@ -21,3 +21,13 @@ Cylinder Radar Launcher — Combined Edition 1.1.0
 - Hiding/unhiding now applies to all launcher shortcuts belonging to the same app package.
 - Kept secure-window protection active while the Vault cylinder transitions away, then cleared hidden icons.
 - Enabled the double-right-swipe vault gesture across cylinder and background touch zones while keeping single-swipe cylinder rotation.
+
+
+Cylinder Radar Launcher 1.4.0 — Smart Personalization + Icon Burst
+==================================================================
+- Wallpaper থেকে swipe-up করে Home cylinder তুললে, এবং Home থেকে ALL APPS cylinder-এ গেলে, icons কেন্দ্রীয় core থেকে আলাদা আলাদা pseudo-random পথে বের হয়; হালকা pop/settle effect দিয়ে নিজ নিজ alphabetic slot-এ বসে।
+- Icon burst-এর সময় hit-testing/long-press সাময়িকভাবে বন্ধ থাকে, যাতে উড়ে চলা icon-এর ভুল স্থানে ট্যাপ হয়ে app menu বা app launch না হয়।
+- App labels locale-aware Collator দিয়ে sort হয়; Home favourites-এর saved selection অক্ষুণ্ণ থাকে, কিন্তু cylinder-এ বর্ণানুক্রমিকভাবে দেখা যায়।
+- Existing Dark/Light/System theme, custom photo background/blur/opacity, live wallpaper, weather, search, favourite pinning, category folders, clock, cylinder gestures এবং password-protected Vault অক্ষুণ্ণ রাখা হয়েছে।
+- Android versionCode 6 এবং versionName 1.4.0-icon-burst করা হয়েছে।
+- এই পরিবেশে Android SDK নেই; GitHub Actions / Android Studio-তে APK build ও ফোনে gesture animation যাচাই করতে হবে।

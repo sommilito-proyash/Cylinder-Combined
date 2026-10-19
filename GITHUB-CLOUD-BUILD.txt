@@ -1,55 +1,66 @@
-GITHUB ACTIONS WORKFLOW — ফোন থেকে ZIP দিয়ে বিল্ড
-==================================================
+CYLINDER RADAR LAUNCHER 1.4.0 — GitHub Actions থেকে APK তৈরি
+=========================================================
 
-GitHub repository-তে `CylinderRadarLauncher-Combined-v1.1.0.zip` নামে complete project ZIP upload করুন। তারপর Add file > Create new file দিয়ে `.github/workflows/build-from-zip.yml` তৈরি করে নিচের YAML পেস্ট করুন এবং Commit করুন।
+এই ZIP-এ Android project source, Gradle wrapper এবং .github/workflows/build.yml আছে। Android SDK-যুক্ত GitHub runner-এ build workflow চালানোর জন্য প্রস্তুত।
 
---- YAML শুরু ---
-name: Build APK from uploaded project ZIP
+পদ্ধতি A — Repository-তে source files আগে থেকেই থাকলে
+--------------------------------------------------
+1. ZIP extract করে project-এর ভেতরের সব ফাইল repository root-এ রাখুন; root-এ settings.gradle, build.gradle, gradlew এবং app/ থাকবে।
+2. .github/workflows/build.yml-ও repository-তে থাকতে হবে।
+3. Commit/push করুন অথবা GitHub > Actions > Build APK > Run workflow ব্যবহার করুন।
+4. Build সফল হলে workflow run খুলে Artifacts থেকে CylinderRadarLauncher-APK নামান। ZIP-এর ভেতর app-debug.apk থাকবে।
 
+পদ্ধতি B — মোবাইল থেকে একটি ZIP ফাইলই upload করা সম্ভব হলে
+----------------------------------------------------
+1. এই archive-টি repository root-এ ঠিক এই নামে upload করুন: CylinderRadarLauncher-v1.4.0.zip
+2. GitHub-এ Add file > Create new file খুলে .github/workflows/build-from-zip.yml তৈরি করুন।
+3. নিচের workflow সম্পূর্ণ কপি করে commit করুন। এটি ZIP extract করে APK build করবে।
+4. Actions-এ Build APK from source ZIP রান হলে Artifacts > CylinderRadarLauncher-APK ডাউনলোড করুন।
+
+--- নিচের YAML নতুন workflow-এ কপি করুন ---
+
+name: Build APK from source ZIP
 on:
   push:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Extract project from ZIP
+      - name: Extract project ZIP
         run: |
-          test -f CylinderRadarLauncher-Combined-v1.1.0.zip
-          mkdir project-src
-          unzip -q CylinderRadarLauncher-Combined-v1.1.0.zip -d project-src
-          cp -a project-src/. .
-          test -f gradlew
+          test -f CylinderRadarLauncher-v1.4.0.zip
+          mkdir -p /tmp/cylinder-radar-source
+          unzip -q CylinderRadarLauncher-v1.4.0.zip -d /tmp/cylinder-radar-source
+          cp -a /tmp/cylinder-radar-source/. .
+          test -f settings.gradle
           test -f app/build.gradle
-
+          test -f gradlew
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
-
       - name: Build debug APK
         run: chmod +x gradlew && ./gradlew --no-daemon assembleDebug
-
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: CylinderRadarLauncher-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
 --- YAML শেষ ---
 
-সফল build-এর run খুলে নিচে Artifacts > CylinderRadarLauncher-APK ডাউনলোড করুন। ZIP খুলে app-debug.apk ইনস্টল করুন।
+গুরুত্বপূর্ণ:
+- Repository-তে ZIP upload করলেই ZIP-এর ভেতরের workflow স্বয়ংক্রিয়ভাবে active হয় না; পদ্ধতি B-তে workflow-টি আলাদাভাবে তৈরি/commit করতে হবে।
+- পুরোনো APK-এর signing key আলাদা হলে নতুন APK update হিসেবে install নাও হতে পারে। সম্ভব হলে পুরোনো debug.keystore-ই ব্যবহার করুন; uninstall করলে launcher settings/PIN মুছে যেতে পারে।
+- এই পরিবেশে Android SDK/Gradle distribution download করা যায়নি; APK build অবশ্যই GitHub Actions বা Android Studio-তে যাচাই করুন।

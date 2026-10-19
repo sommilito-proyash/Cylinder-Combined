@@ -2,6 +2,7 @@ package com.cylinderradar.launcher;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
 import android.util.Base64;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -94,6 +95,45 @@ final class Store {
     void setAnalog(boolean b) { sp.edit().putBoolean("analog", b).apply(); }
     boolean initDone() { return sp.getBoolean("init", false); }
     void setInitDone() { sp.edit().putBoolean("init", true).apply(); }
+
+    // ---- added personalization ---------------------------------------------------------------
+    /** 0 = follow system, 1 = dark neon, 2 = light glass. */
+    int themeMode() { return sp.getInt("theme_mode", 0); }
+    void setThemeMode(int mode) { sp.edit().putInt("theme_mode", Math.max(0, Math.min(2, mode))).apply(); }
+    boolean isLightTheme(Context context) {
+        int mode = themeMode();
+        if (mode == 1) return false;
+        if (mode == 2) return true;
+        int night = context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        return night == Configuration.UI_MODE_NIGHT_NO;
+    }
+
+    String backgroundUri() { return sp.getString("custom_bg_uri", ""); }
+    void setBackgroundUri(String uri) { sp.edit().putString("custom_bg_uri", uri == null ? "" : uri).apply(); }
+    boolean backgroundBlur() { return sp.getBoolean("custom_bg_blur", true); }
+    void setBackgroundBlur(boolean enabled) { sp.edit().putBoolean("custom_bg_blur", enabled).apply(); }
+    int backgroundOpacity() { return sp.getInt("custom_bg_opacity", 78); }
+    void setBackgroundOpacity(int opacity) { sp.edit().putInt("custom_bg_opacity", Math.max(25, Math.min(100, opacity))).apply(); }
+
+    String weatherCity() { return sp.getString("weather_city", "Dhaka"); }
+    void setWeatherCity(String city) { sp.edit().putString("weather_city", city == null || city.trim().isEmpty() ? "Dhaka" : city.trim()).apply(); }
+    String weatherResolvedCity() { return sp.getString("weather_resolved_city", ""); }
+    String weatherTemperature() { return sp.getString("weather_temp", ""); }
+    int weatherCode() { return sp.getInt("weather_code", -1); }
+    long weatherFetchedAt() { return sp.getLong("weather_fetched_at", 0L); }
+    void setWeather(String city, String temp, int code) {
+        sp.edit().putString("weather_resolved_city", city == null ? weatherCity() : city)
+                .putString("weather_temp", temp == null ? "" : temp)
+                .putInt("weather_code", code).putLong("weather_fetched_at", System.currentTimeMillis()).apply();
+    }
+
+    String categoryOverride(String appKey) { return sp.getString("app_category_" + appKey, ""); }
+    void setCategoryOverride(String appKey, String category) {
+        SharedPreferences.Editor e = sp.edit();
+        if (category == null || category.isEmpty() || "Auto".equals(category)) e.remove("app_category_" + appKey);
+        else e.putString("app_category_" + appKey, category);
+        e.apply();
+    }
 
     // ---- vault password ----------------------------------------------------------------------
     boolean hasPassword() {

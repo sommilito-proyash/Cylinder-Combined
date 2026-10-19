@@ -1,4 +1,4 @@
-Cylinder Radar Launcher 1.2.0 (Wallpaper + Invisible Lock) — নতুন কী: CHANGELOG_BN.txt দেখুন
+Cylinder Radar Launcher 1.4.0 (Icon Burst + Smart Personalization) — নতুন কী: CHANGELOG_BN.txt দেখুন
 ================================================
 
 এই সংস্করণটি আপনার দেওয়া CylinderRadarLauncher-v1.zip ও v0.2.0 ফাইলগুলো পর্যালোচনা করে তৈরি করা একক Android Studio প্রজেক্ট।
@@ -51,7 +51,7 @@ GitHub Actions দিয়ে APK (ফোন থেকে)
 সবচেয়ে ভালো: ZIP extract করে প্রজেক্টের ফাইলগুলো GitHub repository root-এ রাখুন। `.github/workflows/build.yml` ফাইলটিও root-এর অধীনে থাকতে হবে। Commit/push করার পর Actions > Build APK খুলুন। বিল্ড সফল হলে run-এর নিচের Artifacts থেকে `CylinderRadarLauncher-APK` ZIP নামিয়ে ভেতর থেকে `app-debug.apk` নিন।
 
 যদি মোবাইলের GitHub UI-তে folder upload করা না যায়:
-1. repository root-এ এই complete ZIP-টি `CylinderRadarLauncher-Combined-v1.1.0.zip` নামে upload করুন।
+1. repository root-এ এই complete ZIP-টি `CylinderRadarLauncher-v1.4.0.zip` নামে upload করুন।
 2. তারপর GitHub-এ `Add file > Create new file` নির্বাচন করে `.github/workflows/build-from-zip.yml` বানান।
 3. `GITHUB-CLOUD-BUILD.txt` ফাইল থেকে workflow snippet কপি করুন। এটি ZIP extract করে build চালাবে।
 4. Commit করুন, Actions-এ রান সফল হলে Artifact ডাউনলোড করুন।
