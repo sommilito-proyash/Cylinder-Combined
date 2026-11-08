@@ -692,7 +692,7 @@ public class MainActivity extends Activity {
                     if (ok != null) ok.run();
                 }
                 @Override public void onAuthenticationError(int errorCode, CharSequence errString) {
-                    if (errorCode != BiometricPrompt.BIOMETRIC_ERROR_NEGATIVE_BUTTON) {
+                    if (errorCode != 13 /* BiometricConstants.BIOMETRIC_ERROR_NEGATIVE_BUTTON: framework BiometricPrompt has no public constant */) {
                         toast("Biometric পাওয়া যায়নি; PIN / Pattern ব্যবহার করুন");
                         authenticatePasswordEntry(ok);
                     }

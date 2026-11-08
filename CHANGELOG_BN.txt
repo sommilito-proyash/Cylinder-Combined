@@ -16,6 +16,7 @@ Cylinder Radar Launcher 2.5.0 — Real 3D Earth
 অপরিবর্তিত (নিরাপত্তা ও Launcher): MainActivity.java, LauncherView.java, Store.java, LockUi.java, ObservatoryActivity.java, WeatherService.java, AppItem.java — বাইট-বাই-বাইট v2.4.0-এর সমান।
 Manifest: শুধু AdminMapActivity ও android:largeHeap="true" যোগ (বড় GeoJSON-এর জন্য)। INTERNET permission আগে থেকেই ছিল।
 Version code 17; version name 2.5.0-real-3d-earth।
+বাগ ফিক্স (v2.5.1): MainActivity.java-তে BiometricPrompt.BIOMETRIC_ERROR_NEGATIVE_BUTTON (framework-এ নেই, GitHub build ব্যর্থ করেছিল) → মান ১৩; আচরণ অপরিবর্তিত।
 
 সীমাবদ্ধতা (সৎভাবে):
 - এই কোড Android SDK ছাড়া তৈরি; Gradle build ও ফোনে চালিয়ে যাচাই হয়নি। Core পার্সার/পলিগন/প্রজেকশন গণিত JVM-এ পরীক্ষিত; GL/UI অংশ stub-SDK-এর বিরুদ্ধে compile-পরীক্ষিত মাত্র।
