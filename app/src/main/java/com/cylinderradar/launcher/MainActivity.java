@@ -1,6 +1,8 @@
 package com.cylinderradar.launcher;
 
 import android.app.Activity;
+import android.hardware.biometrics.BiometricPrompt;
+import android.os.CancellationSignal;
 import android.app.ActivityOptions;
 import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
@@ -215,7 +217,9 @@ public class MainActivity extends Activity {
                 "আবহাওয়ার শহর: " + store.weatherCity(),
                 "অ্যাপ ক্যাটাগরি / ফোল্ডার",
                 "ডিফল্ট লঞ্চার সেটিংস",
-                "জেসচার ও ব্যবহারবিধি"
+                "জেসচার ও ব্যবহারবিধি",
+                "Vault Fingerprint: " + (store.biometricVault() ? "চালু" : "বন্ধ"),
+                "Smart Observatory (Native Preview)"
         };
         builder().setTitle("Cylinder Radar • Controls").setItems(items, new DialogInterface.OnClickListener() {
             @Override public void onClick(DialogInterface dlg, int which) {
@@ -234,6 +238,10 @@ public class MainActivity extends Activity {
                 else if (which == 12) {
                     try { startActivity(new Intent(Settings.ACTION_HOME_SETTINGS)); }
                     catch (Exception e) { startActivity(new Intent(Settings.ACTION_SETTINGS)); }
+                } else if (which == 14) {
+                    configureVaultBiometric();
+                } else if (which == 15) {
+                    startActivity(new Intent(MainActivity.this, ObservatoryActivity.class));
                 } else showHelp();
             }
         }).setNegativeButton("বন্ধ", null).show();
@@ -662,6 +670,43 @@ public class MainActivity extends Activity {
         if (!store.hasPassword()) { createPassword("ভল্ট লক তৈরি করুন", ok); return; }
         long wait = store.lockRemaining();
         if (wait > 0) { toast("অনেকবার ভুল। " + (wait / 1000 + 1) + " সেকেন্ড পরে চেষ্টা করুন"); return; }
+        if (store.biometricVault() && Build.VERSION.SDK_INT >= 28) {
+            authenticateBiometric(ok);
+        } else authenticatePasswordEntry(ok);
+    }
+
+    /** Android system biometric prompt; PIN/pattern remains the explicit fallback. */
+    private void authenticateBiometric(final Runnable ok) {
+        try {
+            BiometricPrompt prompt = new BiometricPrompt.Builder(this)
+                    .setTitle("Cylinder Radar Vault")
+                    .setSubtitle("Fingerprint দিয়ে Vault খুলুন")
+                    .setDescription("Fingerprint কাজ না করলে PIN বা Pattern ব্যবহার করুন")
+                    .setNegativeButton("PIN / Pattern ব্যবহার করুন", getMainExecutor(),
+                            new android.content.DialogInterface.OnClickListener() {
+                                @Override public void onClick(DialogInterface d, int which) { authenticatePasswordEntry(ok); }
+                            }).build();
+            prompt.authenticate(new CancellationSignal(), getMainExecutor(), new BiometricPrompt.AuthenticationCallback() {
+                @Override public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
+                    store.resetFails();
+                    if (ok != null) ok.run();
+                }
+                @Override public void onAuthenticationError(int errorCode, CharSequence errString) {
+                    if (errorCode != BiometricPrompt.BIOMETRIC_ERROR_NEGATIVE_BUTTON) {
+                        toast("Biometric পাওয়া যায়নি; PIN / Pattern ব্যবহার করুন");
+                        authenticatePasswordEntry(ok);
+                    }
+                }
+                @Override public void onAuthenticationFailed() { toast("Fingerprint মেলেনি, আবার চেষ্টা করুন"); }
+            });
+        } catch (Throwable t) {
+            authenticatePasswordEntry(ok);
+        }
+    }
+
+    private void authenticatePasswordEntry(final Runnable ok) {
+        long wait = store.lockRemaining();
+        if (wait > 0) { toast("অনেকবার ভুল। " + (wait / 1000 + 1) + " সেকেন্ড পরে চেষ্টা করুন"); return; }
         String type = store.credType();
         if ("text".equals(type)) { authenticateLegacyText(ok); return; }
         final boolean pattern = "pattern".equals(type);
@@ -670,16 +715,33 @@ public class MainActivity extends Activity {
             @Override public void onCancel() { }
             @Override public void onEntry(LockUi.Entry e, String secret) {
                 if (store.check(secret)) {
-                    store.resetFails();
-                    e.dismiss();
-                    ok.run();
+                    store.resetFails(); e.dismiss(); if (ok != null) ok.run();
                 } else {
-                    store.registerFail();
-                    e.reset();
-                    long w = store.lockRemaining();
+                    store.registerFail(); e.reset(); long w = store.lockRemaining();
                     if (w > 0) { e.dismiss(); toast("অনেকবার ভুল। " + (w / 1000 + 1) + " সেকেন্ড পরে চেষ্টা করুন"); }
                     else e.error(pattern ? "ভুল প্যাটার্ন" : "ভুল PIN");
                 }
+            }
+        });
+    }
+
+    /** Enabling/disabling biometrics always requires the existing vault secret first. */
+    private void configureVaultBiometric() {
+        final boolean enable = !store.biometricVault();
+        if (enable && Build.VERSION.SDK_INT < 28) {
+            toast("Fingerprint unlock-এর জন্য Android 9 বা পরবর্তী সংস্করণ প্রয়োজন");
+            return;
+        }
+        if (!store.hasPassword()) {
+            createPassword("প্রথমে Vault PIN / Pattern তৈরি করুন", new Runnable() {
+                @Override public void run() { store.setBiometricVault(enable); toast(enable ? "Fingerprint option চালু হয়েছে" : "Fingerprint option বন্ধ হয়েছে"); }
+            });
+            return;
+        }
+        authenticatePasswordEntry(new Runnable() {
+            @Override public void run() {
+                store.setBiometricVault(enable);
+                toast(enable ? "Fingerprint unlock চালু হয়েছে" : "Fingerprint unlock বন্ধ হয়েছে");
             }
         });
     }

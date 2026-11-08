@@ -1,4 +1,4 @@
-CYLINDER RADAR LAUNCHER 1.4.0 — GitHub Actions থেকে APK তৈরি
+CYLINDER RADAR LAUNCHER 2.5.0 — GitHub Actions থেকে APK তৈরি
 =========================================================
 
 এই ZIP-এ Android project source, Gradle wrapper এবং .github/workflows/build.yml আছে। Android SDK-যুক্ত GitHub runner-এ build workflow চালানোর জন্য প্রস্তুত।
@@ -12,7 +12,7 @@ CYLINDER RADAR LAUNCHER 1.4.0 — GitHub Actions থেকে APK তৈরি
 
 পদ্ধতি B — মোবাইল থেকে একটি ZIP ফাইলই upload করা সম্ভব হলে
 ----------------------------------------------------
-1. এই archive-টি repository root-এ ঠিক এই নামে upload করুন: CylinderRadarLauncher-v1.4.0.zip
+1. এই archive-টি repository root-এ ঠিক এই নামে upload করুন: CylinderRadarLauncher-v2.5.0.zip
 2. GitHub-এ Add file > Create new file খুলে .github/workflows/build-from-zip.yml তৈরি করুন।
 3. নিচের workflow সম্পূর্ণ কপি করে commit করুন। এটি ZIP extract করে APK build করবে।
 4. Actions-এ Build APK from source ZIP রান হলে Artifacts > CylinderRadarLauncher-APK ডাউনলোড করুন।
@@ -40,15 +40,20 @@ jobs:
         uses: android-actions/setup-android@v3
       - name: Extract project ZIP
         run: |
-          test -f CylinderRadarLauncher-v1.4.0.zip
+          test -f CylinderRadarLauncher-v2.5.0.zip
           mkdir -p /tmp/cylinder-radar-source
-          unzip -q CylinderRadarLauncher-v1.4.0.zip -d /tmp/cylinder-radar-source
-          cp -a /tmp/cylinder-radar-source/. .
+          unzip -q CylinderRadarLauncher-v2.5.0.zip -d /tmp/cylinder-radar-source
+          PROJECT_DIR=$(find /tmp/cylinder-radar-source -mindepth 1 -maxdepth 3 -name settings.gradle -printf '%h\n' | head -n 1)
+          test -n "$PROJECT_DIR"
+          cp -a "$PROJECT_DIR"/. .
           test -f settings.gradle
           test -f app/build.gradle
           test -f gradlew
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Fetch offline geographic data pack
+        continue-on-error: true
+        run: python3 tools/fetch_geo_data.py --out app/src/main/assets/geo --countries "BGD"
       - name: Build debug APK
         run: chmod +x gradlew && ./gradlew --no-daemon assembleDebug
       - name: Upload APK artifact

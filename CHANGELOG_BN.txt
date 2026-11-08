@@ -1,33 +1,40 @@
-Cylinder Radar Launcher 1.2.0 — Wallpaper + Invisible Lock
-==========================================================
-- লঞ্চার উইন্ডো এখন স্বচ্ছ: হোম স্ক্রিনে লাইভ ওয়ালপেপার (Matrix-Radar) চলে। ওপরে সোয়াইপ করলে সিলিন্ডার লঞ্চার ভেসে ওঠে; HOME সিলিন্ডারে নিচে সোয়াইপ / Back / Home দিলে ওয়ালপেপারে ফেরে।
-- ওয়ালপেপার-স্ক্রিনে ট্যাপ করলে তা লাইভ ওয়ালপেপারকে পাঠানো হয়; ছোট ঘড়ি ও "SWIPE UP" হিন্ট (Settings থেকে ঘড়ি বন্ধ করা যায়)।
-- ভল্ট লক: টেক্সট-বক্স বাদ। নতুন PIN প্যাড (শুধু ডট; কী-প্রেস হাইলাইট নেই; ঐচ্ছিক র‍্যান্ডম কীপ্যাড) ও প্যাটার্ন লক (ট্রেস/হাইলাইট নেই)। লক ডায়ালগে FLAG_SECURE।
-- পুরোনো টেক্সট পাসওয়ার্ড একবার সবসময়-মাস্ক করা ঘরে দিয়ে PIN/প্যাটার্নে আপগ্রেড করা যায়।
-- নতুন: অ্যাপ সার্চ (ওপরে বাঁয়ে ম্যাগনিফায়ার; ভল্টের অ্যাপ আসে না), ঘোরানোর হ্যাপটিক টিক, ব্যাকগ্রাউন্ড স্বচ্ছতা (৩ ধাপ), ওয়ালপেপার পিকার, নতুন রং (Hot Pink, Gold), সিস্টেম বারের নিচে edge-to-edge ডিজাইন।
-- app/debug.keystore যুক্ত: ভবিষ্যতের সব CI বিল্ড একই সিগনেচারে হবে। (ফোনে আগে থাকা APK-র কী আলাদা হলে প্রথমবার আপডেট না-ও বসতে পারে — তখন পুরোনোটি আনইনস্টল করে বসান; সেটিংস/লক মুছে যাবে।)
+Cylinder Radar Launcher 2.5.0 — Real 3D Earth
+=============================================
+নতুন (EarthExplorer v4.0 রেফারেন্সের পদ্ধতি Native Android/OpenGL ES-এ রূপান্তর):
+- প্রকৃত দেশের সীমানা: Natural Earth ১:৫০ মি. (world-atlas TopoJSON) থেকে বিশ্বের সব দেশ ও প্রধান ভূখণ্ডের বাস্তব পলিগন গ্লোবে আঁকা হয়; প্রতিবেশী দেশের রং আলাদা (greedy coloring) ও সাদা সীমারেখা।
+- নির্বাচিত দেশ: সোনালি রং, সামান্য উঁচু (raised) 3D আবরণ ও যেকোনো জুমে ধারালো সাদা vector outline; অন্য দেশ ম্লান। ঘূর্ণন থামে।
+- নির্ভুল ট্যাপ: bounding box-এর বদলে প্রকৃত point-in-polygon (even-odd, ছিদ্রসহ)। সমুদ্রে ট্যাপ করলে স্থানাঙ্ক দেখায়।
+- Search: ডেটা এলে সব দেশ (বাংলা + ইংরেজি নাম) খোঁজা যায়; ৩৬টি দেশে রাজধানী/আয়তন/অঞ্চল আগের মতো।
+- বিভাগ ও জেলা মানচিত্র (নতুন AdminMapActivity): geoBoundaries gbOpen ADM1/ADM2, জুম/প্যান/ট্যাপ। বাংলাদেশের ৮ বিভাগ ও ৬৪ জেলার নাম বাংলায়। ADM1 আগে, ADM2 ব্যাকগ্রাউন্ডে প্রি-ফেচ; ✕/⏳ চিহ্ন; ব্যর্থ হলে দেশের রূপরেখা।
+- অফলাইন ডেটা-প্যাক: ডেটার ক্রম = APK asset → ফোনের ক্যাশ → ইন্টারনেট (৩-৪টি মিরর একসাথে, প্রথম বৈধটি জেতে)। একবার এলে স্থায়ীভাবে অফলাইনে।
+- GitHub Actions এখন build-এর আগে ডেটা-প্যাক নামিয়ে APK-র ভেতরে ঢোকায় (ডিফল্ট BGD; ইচ্ছামতো দেশ দেওয়া যায়)।
+- রেন্ডারার সংশোধন: সঠিক orthographic matrix ও depth range, face culling বন্ধ, গ্লোবের সঙ্গে ঘোরে না এমন স্থির আলো, বায়ুমণ্ডলের rim glow, মিপম্যাপ, GL context হারালে টেক্সচার পুনরায় আপলোড।
+- বাগ ফিক্স: v2.4.0-এর makeTexture()-এ `int id = new int[1]` (compile error) ঠিক করা হয়েছে।
+- জুম সীমা ১–২.৭ থেকে ১–৫; ড্র্যাগ এখন জুম অনুযায়ী ১:১; দেশ নির্বাচনে দেশের আকার অনুযায়ী স্বয়ংক্রিয় জুম।
+- Standard মোডে স্বয়ংক্রিয় ঘূর্ণন ~১৫ fps (আগে ৪ fps), ECO-তে ১ fps; ঘূর্ণন বন্ধ থাকলে কোনো পোলিং নেই।
 
-Cylinder Radar Launcher — Combined Edition 1.1.0
-- v1 layered cylinder graphics and interaction engine retained.
-- Bulk home-app selection added to Settings.
-- Password-protected bulk Vault-app management added to Settings.
-- Retained PBKDF2 password hashing and progressive failed-attempt lockout.
-- Protected task preview while leaving an open Vault; clear protection after returning to the locked launcher.
-- Added a 60-second idle timeout for the private cylinder, reset by interaction.
-- Gradle wrapper aligned to 8.9 for Android Gradle Plugin 8.7.3.
-- versionCode increased to 3, versionName set to 1.1.0-combined.
-- Added a GitHub Actions build workflow and mobile-friendly ZIP-build instructions.
-- Added preference migration for v0.2.0 Home/Hidden app lists, clock theme and legacy PIN; successful legacy PIN check upgrades it to PBKDF2.
-- Hiding/unhiding now applies to all launcher shortcuts belonging to the same app package.
-- Kept secure-window protection active while the Vault cylinder transitions away, then cleared hidden icons.
-- Enabled the double-right-swipe vault gesture across cylinder and background touch zones while keeping single-swipe cylinder rotation.
+অপরিবর্তিত (নিরাপত্তা ও Launcher): MainActivity.java, LauncherView.java, Store.java, LockUi.java, ObservatoryActivity.java, WeatherService.java, AppItem.java — বাইট-বাই-বাইট v2.4.0-এর সমান।
+Manifest: শুধু AdminMapActivity ও android:largeHeap="true" যোগ (বড় GeoJSON-এর জন্য)। INTERNET permission আগে থেকেই ছিল।
+Version code 17; version name 2.5.0-real-3d-earth।
 
+সীমাবদ্ধতা (সৎভাবে):
+- এই কোড Android SDK ছাড়া তৈরি; Gradle build ও ফোনে চালিয়ে যাচাই হয়নি। Core পার্সার/পলিগন/প্রজেকশন গণিত JVM-এ পরীক্ষিত; GL/UI অংশ stub-SDK-এর বিরুদ্ধে compile-পরীক্ষিত মাত্র।
+- Natural Earth/geoBoundaries-এর আসল ডেটা এখানে নামানো যায়নি; তাই ZIP-এ ডেটা নেই — GitHub build বা প্রথম চালুতে আসে।
+- geoBoundaries-এ সব দেশের ADM1/ADM2 নেই; কিছু বড় দেশের ADM2 ফাইল বড় হতে পারে।
+- Natural Earth-এর কিছু সীমানা বিতর্কিত এলাকায় de facto রেখা দেখায়; এটি আইনি/রাজনৈতিক সীমানার চূড়ান্ত দলিল নয়।
+- বিভাগ/জেলা মানচিত্র আপাতত ৮৩টি দেশে (ISO কোড টেবিলে থাকা) চালু; বাকি দেশে বোতাম দেখা যায় না।
+Cylinder Radar Launcher 2.4.0 — Country Navigation Expansion
+========================================================
+- v2.3.0-এর বাংলা/ইংরেজি country search dataset ১০টি থেকে ৩৬টি দেশে সম্প্রসারণ।
+- দক্ষিণ এশিয়া, দক্ষিণ-পূর্ব এশিয়া, পূর্ব এশিয়া, পশ্চিম এশিয়া, ইউরোপ, আফ্রিকা, উত্তর ও দক্ষিণ আমেরিকা এবং ওশেনিয়ার অতিরিক্ত দেশ যুক্ত।
+- overlapping bounding-box-এ ট্যাপ করলে সবচেয়ে ছোট matching box-কে অগ্রাধিকার দেওয়া হয়; যেমন বড় প্রতিবেশী দেশের বদলে ছোট দেশের তথ্য পাওয়ার সম্ভাবনা বাড়ে।
+- Search, focus, auto-rotation pause, reset, ECO cadence ও Activity lifecycle আচরণ বজায়।
+- MainActivity, LauncherView, Store, LockUi এবং Manifest v2.3.0-এর মতোই রাখা হয়েছে; Vault security/launcher flow-তে পরিবর্তন নেই।
+- Version code 16; version name 2.4.0-country-navigation-expansion।
 
-Cylinder Radar Launcher 1.4.0 — Smart Personalization + Icon Burst
-==================================================================
-- Wallpaper থেকে swipe-up করে Home cylinder তুললে, এবং Home থেকে ALL APPS cylinder-এ গেলে, icons কেন্দ্রীয় core থেকে আলাদা আলাদা pseudo-random পথে বের হয়; হালকা pop/settle effect দিয়ে নিজ নিজ alphabetic slot-এ বসে।
-- Icon burst-এর সময় hit-testing/long-press সাময়িকভাবে বন্ধ থাকে, যাতে উড়ে চলা icon-এর ভুল স্থানে ট্যাপ হয়ে app menu বা app launch না হয়।
-- App labels locale-aware Collator দিয়ে sort হয়; Home favourites-এর saved selection অক্ষুণ্ণ থাকে, কিন্তু cylinder-এ বর্ণানুক্রমিকভাবে দেখা যায়।
-- Existing Dark/Light/System theme, custom photo background/blur/opacity, live wallpaper, weather, search, favourite pinning, category folders, clock, cylinder gestures এবং password-protected Vault অক্ষুণ্ণ রাখা হয়েছে।
-- Android versionCode 6 এবং versionName 1.4.0-icon-burst করা হয়েছে।
-- এই পরিবেশে Android SDK নেই; GitHub Actions / Android Studio-তে APK build ও ফোনে gesture animation যাচাই করতে হবে।
+সীমাবদ্ধতা:
+- ৩৬টি দেশের তথ্য ও আনুমানিক bounding box bundled; এটি পূর্ণ ১৯৫+ দেশের তালিকা নয়।
+- bounding box প্রকৃত রাজনৈতিক সীমানা নয়; ট্যাপের country lookup আনুমানিক এবং সমুদ্র/সীমান্ত এলাকায় ভুল হতে পারে।
+- Globe texture এখনো illustrative; Natural Earth/geoBoundaries-এর প্রকৃত country polygon এখনো Native OpenGL-এ যুক্ত হয়নি।
+- EarthExplorer_v4_0.zip-এ দেখা TopoJSON/geoBoundaries architecture পরবর্তী polygon/data-pack ধাপের reference; ওই ZIP-এর CDN-নির্ভর HTML সরাসরি Native Android-এ কপি করা হয়নি।
+- Android SDK/Gradle build ও বাস্তব ফোনে runtime test ছাড়া এটিকে verified APK বলা যাবে না।

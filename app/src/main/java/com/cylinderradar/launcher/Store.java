@@ -148,6 +148,12 @@ final class Store {
         return sp.getString("cred_type", "text");
     }
     int pinLength() { return sp.getInt("pin_len", 0); }
+    // ---- Smart Observatory performance --------------------------------------------------------
+    boolean observatoryBatterySaver() { return sp.getBoolean("observatory_battery_saver", false); }
+    void setObservatoryBatterySaver(boolean enabled) { sp.edit().putBoolean("observatory_battery_saver", enabled).apply(); }
+
+    boolean biometricVault() { return sp.getBoolean("vault_biometric", false); }
+    void setBiometricVault(boolean enabled) { sp.edit().putBoolean("vault_biometric", enabled).apply(); }
 
     /** Stores a PIN ("1234") or pattern secret ("p:0147"). Only a salted PBKDF2 hash is kept. */
     void setCredential(String type, String secret) {

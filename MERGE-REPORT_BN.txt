@@ -1,25 +1,37 @@
-ফাইল সমন্বয় প্রতিবেদন — Cylinder Radar Launcher Combined 1.1.0
-==============================================================
+উন্নয়ন প্রতিবেদন — Cylinder Radar Launcher v2.3.0
+=================================================
 
-পর্যালোচিত ইনপুট
----------------
-1. CylinderRadarLauncher-v1.zip — পূর্ণ multi-class Android project: MainActivity, LauncherView, Store, AppItem, Gradle wrapper, resources ও manifest.
-2. CylinderRadarLauncher-MainActivity-v0.2.0.java — একক-ফাইল UI, PIN-based private cylinder, home app selection, app list management, clock/theme preferences.
-3. CylinderRadarLauncher-GitHub-Root-v0.2.0.zip — উপরের v0.2.0 MainActivity-র standalone Android project package.
+Base: v2.2.0 Native OpenGL ES 2.0 Earth/Moon Explorer source ZIP.
 
-পর্যালোচনার ফল
---------------
-- ইনপুট 2 ও ইনপুট 3-এর MainActivity.java একই ফাইল (SHA-256: f4a314595aa1f09228e6515e283288852b8ebe4c219f4ac79c792bb8164cf2ef)। তাই ওই দুই কপিকে আলাদা ইঞ্জিন হিসেবে জোড়া দেওয়া হয়নি।
-- v1-এ পূর্ণাঙ্গ 3D cylinder renderer, clock drawing, inertia/snap gestures, app long-press menu, PIN store ও Gradle wrapper ছিল। এটিই visual/technical base রাখা হয়েছে।
-- v0.2.0 থেকে bulk Home selection ও password-protected Vault manager UI-এর সুবিধা v1-এর MainActivity/Store/LauncherView architecture-এ পোর্ট করা হয়েছে।
-- পুরোনো v0.2.0 preference namespace থেকে Home/Hidden app lists, clock style/theme এবং পুরোনো PIN hash migration যোগ হয়েছে। পুরোনো PIN একবার সঠিক হলে PBKDF2 hash-এ আপগ্রেড হয়।
-- Vault idle timeout (৬০ সেকেন্ড), একই app package-এর সব launcher shortcut একসঙ্গে hide/unhide, ডানদিকে ডাবল-swipe Vault gesture ও transition চলাকালে task preview protection যোগ/সংশোধন করা হয়েছে।
-- একই কাজের দুটি custom Canvas engine একত্র না করায় touch handling, page state, clock animation এবং UI lifecycle-এর সংঘাত এড়ানো হয়েছে।
+পরিবর্তিত ফাইল:
+- app/src/main/java/com/cylinderradar/launcher/EarthActivity.java
+- app/build.gradle (versionCode 15, versionName 2.3.0-smart-earth-navigation)
+- README_BN.txt, CHANGELOG_BN.txt, SMART_OBSERVATORY_ROADMAP_BN.md, GITHUB-CLOUD-BUILD.txt
 
-যাচাই
-----
-- Java ফাইলগুলোর brace/parenthesis balance এবং javac parser-level diagnostics পরীক্ষা করা হয়েছে; syntax-shaped error পাওয়া যায়নি।
-- Android XML files well-formed কি না এবং resource references পরীক্ষা করা হয়েছে।
-- ZIP integrity (`unzip -t`), সব ৫টি Android XML file parsing, manifest icon resource path, এবং মূল project file উপস্থিতি যাচাই করা হয়েছে।
-- Java source-এ brace/parenthesis balance সঠিক; javac syntax-oriented diagnostics পরীক্ষা করা হয়েছে, তবে Android SDK classpath না থাকায় full compile শেষ করা যায়নি।
-- এই build container-এ Android SDK নেই; তাই প্রকৃত APK compile/runtime/device test এখানে করা হয়নি। GitHub Actions অথবা Android Studio-তে assembleDebug সফল হওয়া চূড়ান্ত build verification।
+নতুন কার্যকারিতা:
+- বাংলা/ইংরেজি ১০টি দেশের local autocomplete search।
+- Search selection থেকে আনুমানিক country-centre yaw/pitch positioning ও zoom।
+- Country select হলে auto rotation pause; toggle দিয়ে পুনরায় চালু করা যায়।
+- Reset view আগের orientation/zoom-এ ফেরায়, auto rotation চালু করে এবং target marker লুকায়।
+- Globe centre target marker।
+
+Regression preservation:
+- MainActivity.java, LauncherView.java, Store.java এবং LockUi.java v2.1.0 baseline-এর সঙ্গে byte-for-byte অপরিবর্তিত।
+- Manifest permissions/activities অপরিবর্তিত; EarthActivity আগের মতো registered।
+- Existing ECO render cadence এবং Activity lifecycle pause behaviour বজায়।
+
+যাচাই:
+- ZIP CRC/integrity, AndroidManifest XML parse, raw Java brace/parenthesis balance, version metadata এবং protected-file comparison পরীক্ষা করা হবে।
+- Android SDK/Gradle distribution এই পরিবেশে পাওয়া যায়নি; assembleDebug ও বাস্তব ফোনে runtime test করা যায়নি। তাই এটি source ZIP, verified APK নয়।
+
+সীমাবদ্ধতা:
+- Search dataset ১০টি দেশ; কেন্দ্র bbox midpoint-ভিত্তিক আনুমানিক।
+- GIS-accurate border, সব দেশের তথ্য, জেলা/প্রদেশ boundary layer এখনো নেই।
+- Earth texture illustrative; satellite imagery নয়।
+
+
+v2.4.0 delta:
+- EarthActivity.java: country search list 10 -> 36; smallest matching bounding-box tap selection.
+- app/build.gradle: versionCode 16 / versionName 2.4.0-country-navigation-expansion.
+- MainActivity.java, LauncherView.java, Store.java, LockUi.java and AndroidManifest.xml unchanged from v2.3.0.
+- This is source-level enhancement only; no GIS polygon layer and no verified APK build.
