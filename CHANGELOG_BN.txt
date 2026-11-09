@@ -39,3 +39,21 @@ Cylinder Radar Launcher 2.4.0 — Country Navigation Expansion
 - Globe texture এখনো illustrative; Natural Earth/geoBoundaries-এর প্রকৃত country polygon এখনো Native OpenGL-এ যুক্ত হয়নি।
 - EarthExplorer_v4_0.zip-এ দেখা TopoJSON/geoBoundaries architecture পরবর্তী polygon/data-pack ধাপের reference; ওই ZIP-এর CDN-নির্ভর HTML সরাসরি Native Android-এ কপি করা হয়নি।
 - Android SDK/Gradle build ও বাস্তব ফোনে runtime test ছাড়া এটিকে verified APK বলা যাবে না।
+
+=== v2.6.0 — 3D Mechanical Cube Watch × Cylinder (হোম স্ক্রিন) ===
+• হোম স্ক্রিনে সিলিন্ডারের মুখে বসানো গ্লাস 3D কিউব; ভেতরে Glass_Cube_Watch.html-এর স্কেলেটন মেকানিক্যাল ঘড়ি (নেটিভ Canvas 3D)।
+• মেকানিজম: ব্যারেল+স্প্রিং, সেন্টার/থার্ড/ফোর্থ গিয়ার, এস্কেপ হুইল, প্যালেট ফর্ক, ব্যালান্স হুইল+হেয়ারস্প্রিং, রুবি জুয়েল, ব্রিজ-স্ক্রু, ৪ বিট/সেকেন্ড বিট।
+• কিউবের ৬ পাশে লাইভ প্যানেল: ঘড়ি, আবহাওয়া, ৮ দিনের ফোরকাস্ট, ক্যালেন্ডার (শনিবার শুরু), বিশ্ব সময়, মুভমেন্ট টেবিল।
+• সিলিন্ডার ব্লেন্ড: সেকেন্ডের অরবিট রিং এখন সিলিন্ডারের ঢাকনায়; কিউব রিংয়ের ভেতর দিয়ে বসে; অ্যাক্সেন্ট রঙের হলোগ্রাম গ্লো।
+• টাচ: কিউবে ড্র্যাগ = ঘোরানো, ট্যাপ = পরের পাশ, লং-প্রেস = Smart Observatory। ব্যাটারি সেভার চালু থাকলে হালকা মোড।
+• Settings → ঘড়ি: 3D কিউব → অ্যানালগ → ডিজিটাল (ঘুরে ঘুরে)।
+• Vault / Fingerprint / PIN-Pattern কোড অপরিবর্তিত।
+
+=== v2.7.0 — Full-Cube Mechanical Engine ===
+• কিউবের পুরো আয়তনজুড়ে ইঞ্জিন: ঘড়ির পেছনে ৩-অক্ষের Gyroscope (৩টি ঘূর্ণায়মান রিং + ঘূর্ণি রোটর), পাঁচ দিকে শ্যাফট, পাঁচ দেয়ালে মেশ করা গিয়ার জোড়া (ব্রাশড গোল্ড/টাইটানিয়াম/নীল আভা)।
+• কিউব ঘোরালে সামনে-পেছনের গভীরতা বাস্তবসম্মতভাবে বদলায় (গ্রুপ-ভিত্তিক Painter's sort)।
+• ফোন কাত করলে কিউব সামান্য কাত হয় (accelerometer; শুধু হোম স্ক্রিন দৃশ্যমান ও ECO বন্ধ থাকলে, pause-এ বন্ধ)।
+• ছয় পাশের প্যানেল আরও স্বচ্ছ, যাতে ভেতরের ইঞ্জিন দেখা যায়।
+• Observatory-এর WEATHER প্যানেল এখন হোম কিউবের একই আবহাওয়া ও ৪ দিনের পূর্বাভাস দেখায় (আগে "NOT CONNECTED")।
+• Observatory-তে "EXPLORE 3D EARTH" বোতাম আগে থেকেই EarthActivity খোলে।
+• Vault / Fingerprint / PIN-Pattern অপরিবর্তিত।

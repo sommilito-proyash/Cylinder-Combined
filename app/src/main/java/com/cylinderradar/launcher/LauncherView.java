@@ -49,7 +49,7 @@ public class LauncherView extends View {
     static final String[] COLOR_NAMES = {"Radar Green", "Electric Blue", "Violet", "Red", "Amber", "Cyan", "Hot Pink", "Gold"};
     static final String[] CATEGORY_NAMES = {"Social", "Games", "Media", "Productivity", "Tools", "Other"};
 
-    private static final int MODE_NONE = 0, MODE_ROT = 1, MODE_VERT = 2, MODE_NAV = 3, MODE_REVEAL = 4;
+    private static final int MODE_NONE = 0, MODE_ROT = 1, MODE_VERT = 2, MODE_NAV = 3, MODE_REVEAL = 4, MODE_CUBE = 5;
 
     /** One cylinder worth of apps and its rotation state. */
     static final class Page {
@@ -112,6 +112,9 @@ public class LauncherView extends View {
     private Bitmap customBackground;
     private String loadedBackgroundKey = "";
     int builtAccent = -1;
+    boolean builtCube = false, cubeTouch = false;
+    float cubeHalf, cubeCy, lastY;
+    CubeWatch cube;
     boolean builtLightTheme = false;
     Shader faceShader;
     float[] tickMinor, tickMajor;
@@ -137,6 +140,7 @@ public class LauncherView extends View {
             if (!touching || mode != MODE_NONE || iconBurstActive) return;
             lpFired = true;
             performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            if (cubeTouch) { act.startActivity(new android.content.Intent(act, ObservatoryActivity.class)); return; }
             if (pressed >= 0 && pressed < pages[cur].items.size()) act.showAppMenu(pages[cur].items.get(pressed), cur);
             else act.showSettings();
         }
@@ -559,6 +563,32 @@ public class LauncherView extends View {
 
     void resetClock() { lastNs = 0; invalidate(); }
 
+    // ---- tilt (accelerometer) for the cube; only while the launcher is resumed and not in battery saver ----
+    private android.hardware.SensorManager sensorMgr;
+    private android.hardware.SensorEventListener tiltListener;
+    private boolean tiltAllowed = false;
+
+    void startTilt() {
+        tiltAllowed = true;
+        if (tiltListener != null || !store.cubeWatch() || store.observatoryBatterySaver()) return;
+        sensorMgr = (android.hardware.SensorManager) getContext().getSystemService(android.content.Context.SENSOR_SERVICE);
+        if (sensorMgr == null) return;
+        android.hardware.Sensor acc = sensorMgr.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER);
+        if (acc == null) return;
+        tiltListener = new android.hardware.SensorEventListener() {
+            @Override public void onSensorChanged(android.hardware.SensorEvent e) { if (cube != null) cube.onAccel(e.values[0], e.values[1]); }
+            @Override public void onAccuracyChanged(android.hardware.Sensor sensor, int accuracy) { }
+        };
+        sensorMgr.registerListener(tiltListener, acc, android.hardware.SensorManager.SENSOR_DELAY_UI);
+    }
+
+    void stopTilt() {
+        tiltAllowed = false;
+        if (sensorMgr != null && tiltListener != null) sensorMgr.unregisterListener(tiltListener);
+        tiltListener = null;
+        if (cube != null) cube.clearTilt();
+    }
+
     @Override protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         cal.setTimeZone(TimeZone.getDefault());
@@ -583,13 +613,28 @@ public class LauncherView extends View {
         by = h * 0.79f;
         top = ty + rh * 0.55f;
         bot = by - rh * 0.55f;
-        orbCy = h * 0.31f;
-        orbRx = rw * 0.80f;
-        orbRy = orbRx * 0.20f;
-        faceR = Math.min(w * 0.17f, h * 0.085f);
-        faceCy = Math.max(orbCy - orbRy - faceR - 22 * d, faceR + 64 * d + insetTop);
+        layoutClock();
         layerBack = null;
         layerFront = null;
+    }
+
+    /** Clock geometry: floating orbit for analog/digital, or the glass cube sitting in the cylinder mouth. */
+    void layoutClock() {
+        boolean cubeOn = store.cubeWatch();
+        if (cubeOn) {
+            orbCy = ty;
+            orbRx = rw * 0.96f;
+            orbRy = orbRx * 0.20f;
+            cubeHalf = Math.min(w * 0.22f, h * 0.11f);
+            cubeCy = ty - cubeHalf * 1.0f;
+        } else {
+            orbCy = h * 0.31f;
+            orbRx = rw * 0.80f;
+            orbRy = orbRx * 0.20f;
+        }
+        faceR = Math.min(w * 0.17f, h * 0.085f);
+        faceCy = Math.max(orbCy - orbRy - faceR - 22 * d, faceR + 64 * d + insetTop);
+        builtCube = cubeOn;
     }
 
     static int ac(int color, int alpha) {
@@ -625,6 +670,7 @@ public class LauncherView extends View {
 
     /** Pre-renders everything that never changes frame to frame (background, glass, beam, rims). */
     void buildLayers(int acc) {
+        layoutClock();
         builtAccent = acc;
         builtDim = store.dim();
         builtLightTheme = store.isLightTheme(getContext());
@@ -663,6 +709,21 @@ public class LauncherView extends View {
             b.drawLine(cx, by, cx + (float) Math.sin(a) * rx, by - (float) Math.cos(a) * rx * 0.20f, q);
         }
 
+        if (builtCube) {
+            // hologram halo behind the cube and a glow pooled on the cylinder lid
+            q.setStyle(Paint.Style.FILL);
+            q.setShader(new RadialGradient(cx, cubeCy, cubeHalf * 2.1f, new int[]{ac(acc, 0x2C), ac(acc, 0x00)}, null, Shader.TileMode.CLAMP));
+            b.drawCircle(cx, cubeCy, cubeHalf * 2.1f, q);
+            q.setShader(new RadialGradient(cx, ty, rw * 1.05f, new int[]{ac(acc, 0x48), ac(acc, 0x00)}, null, Shader.TileMode.CLAMP));
+            rf.set(cx - rw * 1.05f, ty - rh * 1.05f, cx + rw * 1.05f, ty + rh * 1.05f);
+            b.drawOval(rf, q);
+            q.setShader(null);
+            q.setStyle(Paint.Style.STROKE);
+            q.setStrokeWidth(1f * d);
+            q.setColor(ac(acc, 0x50));
+            rf.set(cx - orbRx, ty - orbRy, cx + orbRx, ty + orbRy);
+            b.drawOval(rf, q);
+        } else {
         // light beam from the floating clock down onto the cylinder lid
         path.reset();
         path.moveTo(cx - orbRx * 0.9f, orbCy);
@@ -687,6 +748,8 @@ public class LauncherView extends View {
         q.setColor(ac(acc, 0x22));
         rf.set(cx - orbRx * 0.86f, orbCy - orbRy * 0.86f, cx + orbRx * 0.86f, orbCy + orbRy * 0.86f);
         b.drawOval(rf, q);
+
+        }
 
         // cylinder interior
         q.setStyle(Paint.Style.FILL);
@@ -787,7 +850,7 @@ public class LauncherView extends View {
         drawCustomBackground(c);
         if (rv > 0.003f) {
             int acc = COLORS[Math.max(0, Math.min(COLORS.length - 1, store.accent()))];
-            if (layerBack == null || acc != builtAccent || store.dim() != builtDim || store.isLightTheme(getContext()) != builtLightTheme) buildLayers(acc);
+            if (layerBack == null || acc != builtAccent || store.dim() != builtDim || store.isLightTheme(getContext()) != builtLightTheme || store.cubeWatch() != builtCube) buildLayers(acc);
             step(dt);
             int sc = -1;
             if (rv < 0.999f) {
@@ -1057,7 +1120,20 @@ public class LauncherView extends View {
         int H = cal.get(Calendar.HOUR_OF_DAY), M = cal.get(Calendar.MINUTE), S = cal.get(Calendar.SECOND), ms = cal.get(Calendar.MILLISECOND);
         float sec = S + ms / 1000f;
         float bob = (float) Math.sin(now / 1000.0 * 1.3) * 3.5f * d;
-        drawOrbit(c, sec, acc);
+        if (builtCube) {
+            drawOrbit(c, sec, acc, 1);
+            if (cube == null) cube = new CubeWatch(getContext(), d);
+            cube.setGeometry(cx, cubeCy, cubeHalf);
+            cube.setAccent(acc);
+            if (tiltAllowed && tiltListener == null) startTilt();
+            cube.setWeather(store.weatherResolvedCity().isEmpty() ? store.weatherCity() : store.weatherResolvedCity(),
+                    store.weatherTemperature(), store.weatherCode(), store.weatherFetchedAt());
+            cube.draw(c, now, store.observatoryBatterySaver());
+            drawOrbit(c, sec, acc, 2);
+            dateKeyUpdate(now);
+            return;
+        }
+        drawOrbit(c, sec, acc, 0);
         if (store.analog()) drawAnalog(c, H, M, sec, acc, bob);
         else drawDigital(c, H, M, S, ms, acc, bob);
         int dk = cal.get(Calendar.YEAR) * 400 + cal.get(Calendar.DAY_OF_YEAR);
@@ -1067,8 +1143,17 @@ public class LauncherView extends View {
         }
     }
 
-    /** 60 ticks laid on a perspective ring; elapsed seconds stay lit and a light orb glides around. */
-    void drawOrbit(Canvas c, float sec, int acc) {
+    void dateKeyUpdate(long now) {
+        cal.setTimeInMillis(now);
+        int dk = cal.get(Calendar.YEAR) * 400 + cal.get(Calendar.DAY_OF_YEAR);
+        if (dk != dateKey) {
+            dateKey = dk;
+            dateStr = new SimpleDateFormat("EEE, d MMM", Locale.getDefault()).format(cal.getTime()).toUpperCase(Locale.getDefault());
+        }
+    }
+
+    /** 60 ticks laid on a perspective ring; elapsed seconds stay lit and a light orb glides around. part: 0 all, 1 back half, 2 front half. */
+    void drawOrbit(Canvas c, float sec, int acc, int part) {
         float k = orbRy / orbRx;
         p.setShader(null);
         p.setStyle(Paint.Style.STROKE);
@@ -1077,6 +1162,8 @@ public class LauncherView extends View {
             double a = Math.toRadians(i * 6);
             float s = (float) Math.sin(a), co = (float) Math.cos(a);
             float front = (1f - co) / 2f;
+            if (part == 1 && co < 0f) continue;
+            if (part == 2 && co >= 0f) continue;
             boolean major = i % 5 == 0;
             float r1 = orbRx * 0.97f, r2 = orbRx * (major ? 0.86f : 0.92f);
             float delta = sec - i;
@@ -1091,6 +1178,7 @@ public class LauncherView extends View {
         double a = Math.toRadians(sec * 6.0);
         float s = (float) Math.sin(a), co = (float) Math.cos(a);
         float front = (1f - co) / 2f;
+        if ((part == 1 && co < 0f) || (part == 2 && co >= 0f)) { p.setStrokeCap(Paint.Cap.BUTT); return; }
         float ox = cx + orbRx * 0.97f * s, oy = orbCy - orbRy * 0.97f * co;
         float r = (4.5f + 3f * front) * d;
         p.setStyle(Paint.Style.FILL);
@@ -1337,8 +1425,10 @@ public class LauncherView extends View {
                 mode = MODE_NONE;
                 lpFired = false;
                 touching = true;
+                lastY = y;
+                cubeTouch = builtCube && cube != null && prev < 0 && revealTarget >= 1f && reveal > 0.95f && !iconBurstActive && cube.contains(x, y);
                 zone = (y > ty - rh * 1.1f && y < by + rh * 0.9f) ? 1 : 0;
-                pressed = (prev < 0 && revealTarget >= 1f && reveal > 0.95f && !iconBurstActive) ? hit(x, y) : -1;
+                pressed = (!cubeTouch && prev < 0 && revealTarget >= 1f && reveal > 0.95f && !iconBurstActive) ? hit(x, y) : -1;
                 pages[cur].vel = 0f;
                 removeCallbacks(lpRun);
                 postDelayed(lpRun, 480);
@@ -1353,6 +1443,9 @@ public class LauncherView extends View {
                             // wallpaper screen: only a vertical drag (swipe up) does anything
                             mode = (ay > ax && y < downY) ? MODE_REVEAL : MODE_NAV;
                             if (mode == MODE_NAV) mode = MODE_NONE - 1; // ignored sideways drag
+                        } else if (cubeTouch) {
+                            mode = MODE_CUBE;
+                            cube.beginDrag(System.currentTimeMillis());
                         } else {
                             mode = ay > ax * 1.2f ? MODE_VERT : (zone == 1 ? MODE_ROT : MODE_NAV);
                         }
@@ -1364,7 +1457,8 @@ public class LauncherView extends View {
                     int slot = Math.round(pages[cur].rot / pages[cur].grid);
                     if (slot != lastSlot) { lastSlot = slot; performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK); }
                 }
-                if (mode != MODE_NONE) lastX = x;
+                if (mode == MODE_CUBE) cube.dragBy(x - lastX, y - lastY);
+                if (mode != MODE_NONE) { lastX = x; lastY = y; }
                 return true;
             case MotionEvent.ACTION_UP: {
                 removeCallbacks(lpRun);
@@ -1373,7 +1467,15 @@ public class LauncherView extends View {
                 float vx = vt.getXVelocity(), vy = vt.getYVelocity();
                 vt.recycle();
                 vt = null;
-                if (lpFired) { pressed = -1; return true; }
+                if (lpFired) { pressed = -1; cubeTouch = false; return true; }
+                if (cubeTouch) {
+                    boolean wasCube = mode == MODE_CUBE;
+                    cubeTouch = false;
+                    if (wasCube) cube.endDrag(vx, vy, System.currentTimeMillis());
+                    else if (mode == MODE_NONE) cube.tap(System.currentTimeMillis());
+                    pressed = -1;
+                    return true;
+                }
                 float dx = x - downX, dy = y - downY;
                 if (mode == MODE_REVEAL) {
                     boolean shouldReveal = (reveal > 0.28f || vy < -900 * d) && vy < 1200 * d;
@@ -1423,6 +1525,8 @@ public class LauncherView extends View {
             }
             case MotionEvent.ACTION_CANCEL:
                 removeCallbacks(lpRun);
+                cubeTouch = false;
+                if (mode == MODE_CUBE && cube != null) cube.endDrag(0f, 0f, System.currentTimeMillis());
                 touching = false;
                 if (mode == MODE_REVEAL) revealTarget = reveal > 0.5f ? 1f : 0f;
                 if (vt != null) { vt.recycle(); vt = null; }

@@ -100,6 +100,7 @@ public final class ObservatoryActivity extends Activity {
         private final Handler frameHandler = new Handler(Looper.getMainLooper());
         private boolean active = false;
         private boolean batterySaver = false;
+        private Store wst;
         private final Runnable frameTick = new Runnable() {
             @Override public void run() {
                 if (!active || getWindowVisibility() != VISIBLE || !isShown()) return;
@@ -335,9 +336,23 @@ public final class ObservatoryActivity extends Activity {
             c.restore(); p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(.8f));p.setColor(0xFF9CCCE0);c.drawCircle(cx,cy,r,p);p.setStyle(Paint.Style.FILL);
         }
         void drawWeatherDetails(Canvas c,float x,float y,float w,float right,float bottom){
-            panelText(c,"LIVE WEATHER: NOT CONNECTED",x,y+dp(24),10,0xFFFFD58C);
-            panelText(c,"No temperature or forecast is being fabricated.",x,y+dp(43),9,0xFFD0E7F2);
-            panelText(c,"A location + weather provider is required.",x,y+dp(61),9,0xFF8EB8CE);
+            if (wst == null) wst = new Store(getContext());
+            Store st = wst;
+            String temp = st.weatherTemperature(), city = st.weatherResolvedCity().isEmpty() ? st.weatherCity() : st.weatherResolvedCity();
+            if (temp.isEmpty()) {
+                panelText(c,"WEATHER NOT LOADED YET",x,y+dp(24),10,0xFFFFD58C);
+                panelText(c,"Open the home screen once while online.",x,y+dp(43),9,0xFFD0E7F2);
+                return;
+            }
+            panelText(c,city.toUpperCase(Locale.getDefault())+"  "+temp+"\u00B0C",x,y+dp(24),10,0xFFD0E7F2);
+            String fc = getContext().getSharedPreferences("cube_watch", 0).getString("fc", "");
+            String[] rows = fc.isEmpty() ? new String[0] : fc.split(";");
+            for (int i = 0; i < Math.min(4, rows.length); i++) {
+                String[] f = rows[i].split("\\|");
+                if (f.length < 4) continue;
+                String day = f[0].length() >= 10 ? f[0].substring(5) : f[0];
+                panelText(c,day+"   "+f[2]+"\u00B0 / "+f[1]+"\u00B0   rain "+f[3]+"%",x,y+dp(43+i*14),9,0xFF8EB8CE);
+            }
         }
         void drawCalendarDetails(Canvas c,float x,float y,float w,float right,float bottom){
             Calendar now=Calendar.getInstance();

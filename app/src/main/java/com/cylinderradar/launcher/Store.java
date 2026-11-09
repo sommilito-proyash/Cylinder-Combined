@@ -93,6 +93,8 @@ final class Store {
     void setAccent(int i) { sp.edit().putInt("accent", i).apply(); }
     boolean analog() { return sp.getBoolean("analog", false); }
     void setAnalog(boolean b) { sp.edit().putBoolean("analog", b).apply(); }
+    boolean cubeWatch() { return sp.getBoolean("cube_watch", true); }
+    void setCubeWatch(boolean b) { sp.edit().putBoolean("cube_watch", b).apply(); }
     boolean initDone() { return sp.getBoolean("init", false); }
     void setInitDone() { sp.edit().putBoolean("init", true).apply(); }
 

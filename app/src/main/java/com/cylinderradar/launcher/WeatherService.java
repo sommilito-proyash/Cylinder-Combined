@@ -49,6 +49,40 @@ final class WeatherService {
         }, "cylinder-weather").start();
     }
 
+
+    interface DailyCallback { void onResult(String packed); void onError(); }
+
+    /** Daily forecast packed as "yyyy-mm-dd|max|min|rain%;..." (8 days). Keyless Open-Meteo. */
+    static void fetchDaily(final String requestedCity, final DailyCallback callback) {
+        new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    String city = requestedCity == null || requestedCity.trim().isEmpty() ? "Dhaka" : requestedCity.trim();
+                    JSONObject geo = new JSONObject(readUrl("https://geocoding-api.open-meteo.com/v1/search?name="
+                            + URLEncoder.encode(city, "UTF-8") + "&count=1&language=en&format=json"));
+                    JSONArray results = geo.optJSONArray("results");
+                    if (results == null || results.length() == 0) throw new IllegalStateException("City not found");
+                    JSONObject place = results.getJSONObject(0);
+                    JSONObject f = new JSONObject(readUrl("https://api.open-meteo.com/v1/forecast?latitude=" + place.getDouble("latitude")
+                            + "&longitude=" + place.getDouble("longitude")
+                            + "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&forecast_days=8&timezone=auto"));
+                    JSONObject d = f.getJSONObject("daily");
+                    JSONArray t = d.getJSONArray("time"), hi = d.getJSONArray("temperature_2m_max"),
+                            lo = d.getJSONArray("temperature_2m_min"), pr = d.optJSONArray("precipitation_probability_max");
+                    StringBuilder sb = new StringBuilder();
+                    for (int i = 0; i < t.length(); i++) {
+                        if (i > 0) sb.append(';');
+                        sb.append(t.getString(i)).append('|').append(hi.getDouble(i)).append('|').append(lo.getDouble(i)).append('|')
+                                .append(pr == null || pr.isNull(i) ? 0 : pr.getInt(i));
+                    }
+                    callback.onResult(sb.toString());
+                } catch (Exception ex) {
+                    callback.onError();
+                }
+            }
+        }, "cylinder-forecast").start();
+    }
+
     private static String readUrl(String address) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(address).openConnection();
         c.setConnectTimeout(7000);

@@ -113,6 +113,7 @@ public class MainActivity extends Activity {
         // The vault was already locked before returning to the launcher.
         setSecure(false);
         view.resetClock();
+        view.startTilt();
         refreshWeather(false);
     }
 
@@ -120,6 +121,7 @@ public class MainActivity extends Activity {
         // If the private cylinder was visible, keep the task preview protected while it leaves.
         boolean wasVaultVisible = view != null && (view.vaultOpen || view.cur == LauncherView.VAULT || view.prev == LauncherView.VAULT);
         if (view != null) view.lockNow();
+        if (view != null) view.stopTilt();
         if (wasVaultVisible) setSecure(true);
         super.onPause();
     }
@@ -207,7 +209,7 @@ public class MainActivity extends Activity {
                 "হোম স্ক্রিনের অ্যাপ নির্বাচন / ফেভারিট",
                 "হিডেন অ্যাপ ম্যানেজ করুন (লক প্রয়োজন)",
                 "রাডার / সিলিন্ডারের রং",
-                analog ? "ঘড়ি: অ্যানালগ → ডিজিটাল" : "ঘড়ি: ডিজিটাল → অ্যানালগ",
+                store.cubeWatch() ? "ঘড়ি: 3D কিউব → অ্যানালগ" : analog ? "ঘড়ি: অ্যানালগ → ডিজিটাল" : "ঘড়ি: ডিজিটাল → 3D কিউব",
                 store.hasPassword() ? "ভল্ট লক পরিবর্তন (PIN / প্যাটার্ন)" : "ভল্ট লক সেট করুন (PIN / প্যাটার্ন)",
                 "লঞ্চার ব্যাকগ্রাউন্ডের ঘনত্ব: " + DIM_NAMES[store.dim()],
                 "ওয়ালপেপার-স্ক্রিনে ঘড়ি: " + (store.wallClock() ? "চালু" : "বন্ধ"),
@@ -226,7 +228,12 @@ public class MainActivity extends Activity {
                 if (which == 0) chooseHomeApps();
                 else if (which == 1) manageVaultApps();
                 else if (which == 2) chooseColor();
-                else if (which == 3) { store.setAnalog(!analog); view.invalidate(); }
+                else if (which == 3) {
+                    if (store.cubeWatch()) { store.setCubeWatch(false); store.setAnalog(true); }
+                    else if (analog) store.setAnalog(false);
+                    else store.setCubeWatch(true);
+                    view.invalidate();
+                }
                 else if (which == 4) changePassword();
                 else if (which == 5) { store.setDim((store.dim() + 1) % 3); toast(DIM_NAMES[store.dim()]); view.invalidate(); }
                 else if (which == 6) { store.setWallClock(!store.wallClock()); view.invalidate(); }
