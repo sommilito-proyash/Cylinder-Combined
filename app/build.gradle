@@ -7,8 +7,8 @@ android {
         applicationId 'com.cylinderradar.launcher'
         minSdk 26
         targetSdk 34
-        versionCode 20
-        versionName '2.7.0-full-cube-engine'
+        versionCode 21
+        versionName '2.8.0-spinning-top-cube'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8

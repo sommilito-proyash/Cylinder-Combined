@@ -59,7 +59,10 @@ final class CubeWatch {
 
     // ------------------------------------------------------------------ geometry on screen
     private float cx, cy, half, unit, focal, d = 1f;
-    private final float[] R = new float[9];
+    private final float[] R = new float[9], Rw = new float[9];
+    private float[] RA = R;                               // matrix used by the projection helpers (cube frame or watch frame)
+    private final float[] qw = new float[4];
+    private float cx0, cy0;
     private final float[] q = {0, 0, 0, 1};
     private int accent = 0xFF39FF88;
     private boolean eco = false;
@@ -160,7 +163,7 @@ final class CubeWatch {
     // Public API
     // =================================================================================================
     void setGeometry(float cx, float cy, float half) {
-        this.cx = cx; this.cy = cy; this.half = half;
+        this.cx0 = cx; this.cy0 = cy; this.cx = cx; this.cy = cy; this.half = half;
         this.unit = half / HALF;
         this.focal = CAMD * unit;
     }
@@ -212,10 +215,22 @@ final class CubeWatch {
     }
     private float tiltX = 0f, tiltY = 0f, tgtX = 0f, tgtY = 0f, avgAx = 0f, avgAy = 0f;
     private boolean avgInit = false;
+    private static final float[] QALIGN = alignQuat();
+    private final float[] swq = new float[4], qy = new float[4], qwob = new float[4], qtmp = new float[4];
+    /** Rotation taking the cube diagonal (1,1,1) to screen-up, so the cube balances on its (-1,-1,-1) corner. */
+    private static float[] alignQuat() {
+        float th = (float) Math.acos(1.0 / Math.sqrt(3.0)), s = (float) Math.sin(th / 2), k = (float) (1.0 / Math.sqrt(2.0));
+        return new float[]{-k * s, 0f, k * s, (float) Math.cos(th / 2)};
+    }
+    /** Spinning-top pose: slow spin about the vertical diagonal plus a faint precession wobble. */
     private float[] swayQuat(double t) {
-        float[] o = new float[4];
-        eulerYXZ((float) (0.20 + 0.10 * Math.sin(t * 0.31)) + tiltX, (float) (-0.55 * Math.sin(t * 0.23)) + tiltY, 0f, o);
-        return o;
+        float psi = (float) ((t * 0.30) % (double) TAU);
+        qy[0] = 0f; qy[1] = (float) Math.sin(psi / 2); qy[2] = 0f; qy[3] = (float) Math.cos(psi / 2);
+        eulerYXZ(0.05f * (float) Math.sin(t * 0.9) + tiltX, 0f, 0.05f * (float) Math.cos(t * 0.7) + tiltY, qwob);
+        qmul(qy, QALIGN, qtmp);
+        qmul(qwob, qtmp, swq);
+        normalize(swq);
+        return swq;
     }
     /** Accelerometer sample (m/s2, device axes). The slow average is the holding pose, so only changes tilt the cube. */
     void onAccel(float ax, float ay) {
@@ -259,11 +274,11 @@ final class CubeWatch {
         o[0] = a[0] * k0 + bx * k1; o[1] = a[1] * k0 + by * k1; o[2] = a[2] * k0 + bz * k1; o[3] = a[3] * k0 + bw * k1;
         normalize(o);
     }
-    private void quatToMatrix() {
-        float x = q[0], y = q[1], z = q[2], w = q[3];
-        R[0] = 1 - 2 * (y * y + z * z); R[1] = 2 * (x * y - z * w); R[2] = 2 * (x * z + y * w);
-        R[3] = 2 * (x * y + z * w); R[4] = 1 - 2 * (x * x + z * z); R[5] = 2 * (y * z - x * w);
-        R[6] = 2 * (x * z - y * w); R[7] = 2 * (y * z + x * w); R[8] = 1 - 2 * (x * x + y * y);
+    private static void qToM(float[] qq, float[] m) {
+        float x = qq[0], y = qq[1], z = qq[2], w = qq[3];
+        m[0] = 1 - 2 * (y * y + z * z); m[1] = 2 * (x * y - z * w); m[2] = 2 * (x * z + y * w);
+        m[3] = 2 * (x * y + z * w); m[4] = 1 - 2 * (x * x + z * z); m[5] = 2 * (y * z - x * w);
+        m[6] = 2 * (x * z - y * w); m[7] = 2 * (y * z + x * w); m[8] = 1 - 2 * (x * x + y * y);
     }
     private static float smooth(float x) { x = Math.max(0f, Math.min(1f, x)); return x * x * (3f - 2f * x); }
 
@@ -320,7 +335,7 @@ final class CubeWatch {
     }
     /** Cube-space point -> screen. */
     private void cubeProj(float ox, float oy, float oz) {
-        float X = R[0] * ox + R[1] * oy + R[2] * oz, Y = R[3] * ox + R[4] * oy + R[5] * oz, Z = R[6] * ox + R[7] * oy + R[8] * oz;
+        float X = RA[0] * ox + RA[1] * oy + RA[2] * oz, Y = RA[3] * ox + RA[4] * oy + RA[5] * oz, Z = RA[6] * ox + RA[7] * oy + RA[8] * oz;
         float s = focal / (CAMD - Z);
         prx = cx + s * X; pry = cy - s * Y; prs = s; prz = Z;
     }
@@ -329,8 +344,8 @@ final class CubeWatch {
         float a = (float) Math.cos(th), b = (float) Math.sin(th);
         float ox = (px - C) * WS, oy = (C - py) * WS, oz = pz * WS + WZ;
         float ux = a * WS, uy = -b * WS, vx = -b * WS, vy = -a * WS;
-        float Ox = R[0] * ox + R[1] * oy + R[2] * oz, Oy = R[3] * ox + R[4] * oy + R[5] * oz, Oz = R[6] * ox + R[7] * oy + R[8] * oz;
-        float Ux = R[0] * ux + R[1] * uy, Uy = R[3] * ux + R[4] * uy, Vx = R[0] * vx + R[1] * vy, Vy = R[3] * vx + R[4] * vy;
+        float Ox = RA[0] * ox + RA[1] * oy + RA[2] * oz, Oy = RA[3] * ox + RA[4] * oy + RA[5] * oz, Oz = RA[6] * ox + RA[7] * oy + RA[8] * oz;
+        float Ux = RA[0] * ux + RA[1] * uy, Uy = RA[3] * ux + RA[4] * uy, Vx = RA[0] * vx + RA[1] * vy, Vy = RA[3] * vx + RA[4] * vy;
         float s = focal / (CAMD - Oz);
         mv[0] = s * Ux; mv[1] = s * Vx; mv[2] = cx + s * Ox;
         mv[3] = -s * Uy; mv[4] = -s * Vy; mv[5] = cy - s * Oy;
@@ -834,22 +849,23 @@ final class CubeWatch {
     // =================================================================================================
     // Full-cube engine: 3-axis gyroscope behind the watch, shafts in five directions, gear pairs on the walls
     // =================================================================================================
-    private static final float[] G = {0f, 0f, -200f};
+    private static final float[] G = {0f, 0f, -190f};
     private static final float GSC = 2.4f, GD = 150f;
     private static final int METAL_GOLD = 0xFFC9A24B, METAL_TI = 0xFF93A5B8, METAL_DARK = 0xFF46515E, GLOW = 0xFF63E5FF;
-    private static final float[][] WO = {{0, 0, -340}, {-340, 0, -200}, {340, 0, -200}, {0, 340, -200}, {0, -340, -200}};
-    private static final float[][] WUX = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {1, 0, 0}, {0, 0, 1}};
-    private static final float[][] WUY = {{0, 1, 0}, {0, 0, 1}, {0, 1, 0}, {0, 0, 1}, {1, 0, 0}};
-    private static final float[] WANG = {0.62f, 0.30f, 2.55f, -0.45f, 2.35f};
-    private static final float[] WRATE = {2f, -1.5f, 1.5f, -2f, 1f};
+    private static final float[][] WO = {{0, 0, -340}, {-340, 0, 0}, {340, 0, 0}, {0, 340, 0}, {0, -340, 0}, {0, 0, 340}};
+    private static final float[][] WUX = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {1, 0, 0}, {0, 0, 1}, {0, 1, 0}};
+    private static final float[][] WUY = {{0, 1, 0}, {0, 0, 1}, {0, 1, 0}, {0, 0, 1}, {1, 0, 0}, {1, 0, 0}};
+    private static final float[] WANG = {0.62f, 0.30f, 2.55f, -0.45f, 2.35f, 1.1f};
+    private static final float[] WRATE = {2f, -1.5f, 1.5f, -2f, 1f, -1f};
     private static final int WN1 = 48, WN2 = 20;
     private Path pWallBig, pWallSmall, pRotor;
-    private final float[] wTh1 = new float[5], wTh2 = new float[5];
+    private final float[] wTh1 = new float[6], wTh2 = new float[6];
     private float gyA1, gyA2, gyA3, gyRot;
     private final float[] m1 = new float[9], m2 = new float[9], m3 = new float[9], mt = new float[9], mr = new float[9];
-    private final float[] entDepth = new float[12];
-    private final int[] entKind = new int[12];
+    private final float[] entDepth = new float[16];
+    private final int[] entKind = new int[16];
     private final float[] ptA = new float[3];
+    private float ga = 1f;                                 // fade of the current engine part (walls in front of the dial fade out)
 
     private void buildEngine() {
         pWallBig = gearPath(WN1, 5, 14 * K, 0.84f, 3f * K);
@@ -867,26 +883,26 @@ final class CubeWatch {
         for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++)
             o[i * 3 + j] = a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j];
     }
-    private float camZ(float x, float y, float z) { return R[6] * x + R[7] * y + R[8] * z; }
+    private float camZ(float x, float y, float z) { return RA[6] * x + RA[7] * y + RA[8] * z; }
 
     /** Flat gear lying in the plane (ux, uy) of cube space, rotated by th about its normal, with a few depth slices. */
     private void gearPlane(Canvas c, Path local, float scale, float ox, float oy, float oz, float[] ux, float[] uy, float th,
                            float thick, int color, boolean rim) {
         float nx = ux[1] * uy[2] - ux[2] * uy[1], ny = ux[2] * uy[0] - ux[0] * uy[2], nz = ux[0] * uy[1] - ux[1] * uy[0];
-        float ncz = R[6] * nx + R[7] * ny + R[8] * nz;
-        float ncx = R[0] * nx + R[1] * ny + R[2] * nz, ncy = R[3] * nx + R[4] * ny + R[5] * nz;
+        float ncz = RA[6] * nx + RA[7] * ny + RA[8] * nz;
+        float ncx = RA[0] * nx + RA[1] * ny + RA[2] * nz, ncy = RA[3] * nx + RA[4] * ny + RA[5] * nz;
         float light = 0.58f + 0.42f * Math.min(1f, Math.abs(ncx * -0.30f + ncy * 0.42f + ncz * 0.85f));
         float ca = (float) Math.cos(th), sa = (float) Math.sin(th);
         float ax = ux[0] * ca + uy[0] * sa, ay = ux[1] * ca + uy[1] * sa, az = ux[2] * ca + uy[2] * sa;
         float bx = -ux[0] * sa + uy[0] * ca, by = -ux[1] * sa + uy[1] * ca, bz = -ux[2] * sa + uy[2] * ca;
-        float Ux = (R[0] * ax + R[1] * ay + R[2] * az) * scale, Uy = (R[3] * ax + R[4] * ay + R[5] * az) * scale;
-        float Vx = (R[0] * bx + R[1] * by + R[2] * bz) * scale, Vy = (R[3] * bx + R[4] * by + R[5] * bz) * scale;
+        float Ux = (RA[0] * ax + RA[1] * ay + RA[2] * az) * scale, Uy = (RA[3] * ax + RA[4] * ay + RA[5] * az) * scale;
+        float Vx = (RA[0] * bx + RA[1] * by + RA[2] * bz) * scale, Vy = (RA[3] * bx + RA[4] * by + RA[5] * bz) * scale;
         int n = eco ? 2 : 4;
         for (int j = 0; j < n; j++) {
             float off = (-0.5f + (float) j / (n - 1)) * thick;
             if (ncz < 0f) off = -off;                       // nearest slice is drawn last
             float X = ox + nx * off, Y = oy + ny * off, Z = oz + nz * off;
-            float Ox = R[0] * X + R[1] * Y + R[2] * Z, Oy = R[3] * X + R[4] * Y + R[5] * Z, Oz = R[6] * X + R[7] * Y + R[8] * Z;
+            float Ox = RA[0] * X + RA[1] * Y + RA[2] * Z, Oy = RA[3] * X + RA[4] * Y + RA[5] * Z, Oz = RA[6] * X + RA[7] * Y + RA[8] * Z;
             float sc = focal / (CAMD - Oz);
             mv[0] = sc * Ux; mv[1] = sc * Vx; mv[2] = cx + sc * Ox;
             mv[3] = -sc * Uy; mv[4] = -sc * Vy; mv[5] = cy - sc * Oy;
@@ -894,12 +910,12 @@ final class CubeWatch {
             mat.setValues(mv);
             c.save(); c.concat(mat);
             fillP.setShader(null); fillP.setStyle(Paint.Style.FILL);
-            fillP.setColor(shade(color, light * (0.55f + 0.45f * (float) j / (n - 1))));
+            fillP.setColor(al(shade(color, light * (0.55f + 0.45f * (float) j / (n - 1))), (int) (255 * ga)));
             c.drawPath(local, fillP);
             if (j == n - 1 && rim) {
                 strokeP.setShader(null); strokeP.setStyle(Paint.Style.STROKE);
                 strokeP.setStrokeWidth(Math.max(0.6f, 1.2f / Math.max(0.05f, sc * scale)));
-                strokeP.setColor(al(GLOW, 0x88));
+                strokeP.setColor(al(GLOW, (int) (0x88 * ga)));
                 c.drawPath(local, strokeP);
             }
             c.restore();
@@ -910,9 +926,9 @@ final class CubeWatch {
         cubeProj(x1, y1, z1); float bx = prx, by = pry, s1 = prs;
         float w = Math.max(1.4f, 2f * r * (s0 + s1) / 2f);
         strokeP.setShader(null); strokeP.setStyle(Paint.Style.STROKE); strokeP.setStrokeCap(Paint.Cap.ROUND);
-        strokeP.setStrokeWidth(w); strokeP.setColor(shade(color, 0.55f + 0.35f * shadeAll));
+        strokeP.setStrokeWidth(w); strokeP.setColor(al(shade(color, 0.55f + 0.35f * shadeAll), (int) (255 * ga)));
         c.drawLine(ax, ay, bx, by, strokeP);
-        strokeP.setStrokeWidth(Math.max(0.8f, w * 0.28f)); strokeP.setColor(al(0xFFFFFFFF, 0x70));
+        strokeP.setStrokeWidth(Math.max(0.8f, w * 0.28f)); strokeP.setColor(al(0xFFFFFFFF, (int) (0x70 * ga)));
         c.drawLine(ax, ay, bx, by, strokeP);
         strokeP.setStrokeCap(Paint.Cap.BUTT);
     }
@@ -927,10 +943,10 @@ final class CubeWatch {
         // boss + pivot caps
         cubeProj(o[0], o[1], o[2]);
         fillP.setShader(null); fillP.setStyle(Paint.Style.FILL);
-        fillP.setColor(shade(METAL_DARK, 0.7f + 0.3f * shadeAll)); c.drawCircle(prx, pry, 13f * prs, fillP);
-        fillP.setColor(al(GLOW, 0xB0)); c.drawCircle(prx, pry, 4.5f * prs, fillP);
+        fillP.setColor(al(shade(METAL_DARK, 0.7f + 0.3f * shadeAll), (int) (255 * ga))); c.drawCircle(prx, pry, 13f * prs, fillP);
+        fillP.setColor(al(GLOW, (int) (0xB0 * ga))); c.drawCircle(prx, pry, 4.5f * prs, fillP);
         cubeProj(gx, gy, gz);
-        fillP.setColor(shade(METAL_DARK, 0.7f + 0.3f * shadeAll)); c.drawCircle(prx, pry, 8f * prs, fillP);
+        fillP.setColor(al(shade(METAL_DARK, 0.7f + 0.3f * shadeAll), (int) (255 * ga))); c.drawCircle(prx, pry, 8f * prs, fillP);
     }
     private void ring3(Canvas c, float[] e1, float[] e2, float r, float width, int color, int alpha) {
         tmp.reset();
@@ -984,7 +1000,7 @@ final class CubeWatch {
     }
     private void shaftDraw(Canvas c, int w) {
         float[] o = WO[w];
-        shaft3(c, G[0], G[1], G[2], o[0], o[1], o[2], 4.2f, STEEL);
+        shaft3(c, o[0] * 0.918f, o[1] * 0.918f, o[2] * 0.918f, o[0], o[1], o[2], 5f, STEEL);
     }
     private void drawWatchGroup(Canvas c) {
         int n = parts.size();
@@ -994,8 +1010,10 @@ final class CubeWatch {
     /** Painter's sort of the engine groups (far to near) and drawing. */
     private void drawEngine(Canvas c) {
         int ne = 0;
-        for (int w = 0; w < 5; w++) { entDepth[ne] = camZ(WO[w][0], WO[w][1], WO[w][2]); entKind[ne++] = w; }
-        for (int w = 0; w < 5; w++) { entDepth[ne] = camZ((WO[w][0] + G[0]) * 0.5f, (WO[w][1] + G[1]) * 0.5f, (WO[w][2] + G[2]) * 0.5f); entKind[ne++] = 10 + w; }
+        RA = R;
+        for (int w = 0; w < 6; w++) { entDepth[ne] = camZ(WO[w][0], WO[w][1], WO[w][2]); entKind[ne++] = w; }
+        for (int w = 0; w < 6; w++) { entDepth[ne] = camZ(WO[w][0] * 0.96f, WO[w][1] * 0.96f, WO[w][2] * 0.96f); entKind[ne++] = 10 + w; }
+        RA = Rw;
         entDepth[ne] = camZ(G[0], G[1], G[2]); entKind[ne++] = 20;
         entDepth[ne] = camZ(0f, 0f, -17f); entKind[ne++] = 30;
         for (int i = 1; i < ne; i++) {
@@ -1005,11 +1023,17 @@ final class CubeWatch {
         }
         for (int i = 0; i < ne; i++) {
             int k = entKind[i];
-            if (k < 5) wallDraw(c, k);
-            else if (k < 15) shaftDraw(c, k - 10);
-            else if (k == 20) gyroDraw(c);
-            else drawWatchGroup(c);
+            if (k < 20) {
+                RA = R;
+                int w = k < 10 ? k : k - 10;
+                RA = R;
+                ga = Math.max(0f, Math.min(1f, (-camZ(WO[w][0], WO[w][1], WO[w][2]) - 40f) / 150f));
+                if (ga > 0.02f) { if (k < 10) wallDraw(c, w); else shaftDraw(c, w); }
+                ga = 1f;
+            } else if (k == 20) { RA = Rw; ga = 1f; gyroDraw(c); }
+            else { RA = Rw; drawWatchGroup(c); }
         }
+        RA = R;
     }
 
     // =================================================================================================
@@ -1023,10 +1047,17 @@ final class CubeWatch {
         eco = ecoMode;
         updateTime(now);
         updateOrientation(now, dt);
-        quatToMatrix();
-        frontView = R[8] >= 0f;
-        // lighting of the watch plane: normal in camera space is (R[2], R[5], R[8])
-        float nx = R[2], ny = R[5], nz = R[8];
+        qToM(q, R);
+        // the watch is gimbal-mounted: it ignores the cube's spin and always faces the viewer, upright
+        double wt = (now - phase0) / 1000.0;
+        eulerYXZ(0.10f * (float) Math.sin(wt * 0.31) + 0.5f * tiltX, -0.22f * (float) Math.sin(wt * 0.23) - 0.5f * tiltY, 0f, qw);
+        qToM(qw, Rw);
+        // keep the contact corner exactly on the cylinder lid whatever the pose
+        RA = R; cx = cx0; cy = cy0;
+        cubeProj(-HALF, -HALF, -HALF);
+        cx += cx0 - prx; cy += (cy0 + 1.7320508f * half) - pry;
+        frontView = Rw[8] >= 0f;
+        float nx = Rw[2], ny = Rw[5], nz = Rw[8];
         float l = Math.abs(nx * -0.30f + ny * 0.42f + nz * 0.85f);
         shadeAll = 0.62f + 0.48f * Math.min(1f, l);
         refreshPanels(now);
@@ -1063,7 +1094,7 @@ final class CubeWatch {
         forkRot = 9f * DEG * (float) Math.tanh(b * 3f);
         balRot = b;
         float base = sq / 60f * TAU;
-        for (int w = 0; w < 5; w++) { wTh1[w] = base * WRATE[w]; wTh2[w] = mesh(wTh1[w], WN1, WN2, WANG[w]); }
+        for (int w = 0; w < 6; w++) { wTh1[w] = base * WRATE[w]; wTh2[w] = mesh(wTh1[w], WN1, WN2, WANG[w]); }
         float tt = (float) (tReal % 1000.0);
         if (eco) { gyA1 = base * 0.6f; gyA2 = base * 0.9f; gyA3 = base * 0.5f; gyRot = base * 6f; }
         else { gyA1 = tt * 0.37f; gyA2 = tt * 0.53f; gyA3 = tt * 0.29f; gyRot = tt * 7.5f; }
@@ -1147,7 +1178,7 @@ final class CubeWatch {
             cubeProj(X, Y, Z);
             meshV[idx++] = prx; meshV[idx++] = pry;
         }
-        bmpP.setAlpha((int) (255 * Math.min(1f, nzc * 2.4f)));
+        bmpP.setAlpha((int) (140 * Math.min(1f, nzc * 2.4f)));
         c.drawBitmapMesh(panel[f], MESH, MESH, meshV, 0, null, 0, bmpP);
     }
 
