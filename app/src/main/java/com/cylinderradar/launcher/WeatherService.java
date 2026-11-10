@@ -65,11 +65,18 @@ final class WeatherService {
                     JSONObject place = results.getJSONObject(0);
                     JSONObject f = new JSONObject(readUrl("https://api.open-meteo.com/v1/forecast?latitude=" + place.getDouble("latitude")
                             + "&longitude=" + place.getDouble("longitude")
+                            + "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m"
                             + "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&forecast_days=8&timezone=auto"));
+                    JSONObject cur = f.optJSONObject("current");
                     JSONObject d = f.getJSONObject("daily");
                     JSONArray t = d.getJSONArray("time"), hi = d.getJSONArray("temperature_2m_max"),
                             lo = d.getJSONArray("temperature_2m_min"), pr = d.optJSONArray("precipitation_probability_max");
                     StringBuilder sb = new StringBuilder();
+                    if (cur != null) {      // "C|temp|code|wind|humidity|feels|place" first, then one row per day
+                        sb.append("C|").append(cur.optDouble("temperature_2m", 0)).append('|').append(cur.optInt("weather_code", -1)).append('|')
+                                .append(cur.optDouble("wind_speed_10m", 0)).append('|').append(cur.optInt("relative_humidity_2m", 0)).append('|')
+                                .append(cur.optDouble("apparent_temperature", 0)).append('|').append(place.optString("name", city).replace(';', ' ').replace('|', ' ')).append(';');
+                    }
                     for (int i = 0; i < t.length(); i++) {
                         if (i > 0) sb.append(';');
                         sb.append(t.getString(i)).append('|').append(hi.getDouble(i)).append('|').append(lo.getDouble(i)).append('|')

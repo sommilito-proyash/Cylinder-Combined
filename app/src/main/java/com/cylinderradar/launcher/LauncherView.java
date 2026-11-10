@@ -112,7 +112,7 @@ public class LauncherView extends View {
     private Bitmap customBackground;
     private String loadedBackgroundKey = "";
     int builtAccent = -1;
-    boolean builtCube = false, cubeTouch = false;
+    boolean builtCube = false, cubeTouch = false, cubeDeferred = false, consumeTouch = false;
     float cubeHalf, cubeCy, lastY;
     CubeWatch cube;
     boolean builtLightTheme = false;
@@ -626,7 +626,7 @@ public class LauncherView extends View {
             orbRx = rw * 0.96f;
             orbRy = orbRx * 0.20f;
             cubeHalf = Math.min(w * 0.19f, h * 0.092f);
-            cubeCy = ty - cubeHalf * 1.7320508f;     // the cube balances on one corner, like a spinning top
+            cubeCy = ty - cubeHalf * 1.784f;     // glass sphere resting on the lid; the cube balances on one corner inside it
         } else {
             orbCy = h * 0.31f;
             orbRx = rw * 0.80f;
@@ -890,6 +890,11 @@ public class LauncherView extends View {
         if (tr) drawPage(c, pages[prev], 1f - e, -transDir * e * 1.1f, true, acc);
         drawPage(c, pages[cur], tr ? e : 1f, tr ? transDir * (1f - e) * 1.1f : 0f, true, acc);
 
+        if (cubeDeferred && cube != null) {
+            cubeDeferred = false;
+            c.drawColor(ac(0x000000, (int) (0x99 * cube.focusAmount())));
+            cube.draw(c, now, store.observatoryBatterySaver());
+        }
         drawRadar(c, now, acc);
         drawChrome(c, now, acc, tr ? e : 1f);
     }
@@ -1124,10 +1129,18 @@ public class LauncherView extends View {
             drawOrbit(c, sec, acc, 1);
             if (cube == null) cube = new CubeWatch(getContext(), d);
             cube.setGeometry(cx, cubeCy, cubeHalf);
+            cube.setFocusCenter(w / 2f, h * 0.43f);
             cube.setAccent(acc);
+            cubeDeferred = false;
             if (tiltAllowed && tiltListener == null) startTilt();
             cube.setWeather(store.weatherResolvedCity().isEmpty() ? store.weatherCity() : store.weatherResolvedCity(),
                     store.weatherTemperature(), store.weatherCode(), store.weatherFetchedAt());
+            if (cube.focused()) {      // a face is up front: draw the cube after the icons so nothing covers it
+                drawOrbit(c, sec, acc, 0);
+                cubeDeferred = true;
+                dateKeyUpdate(now);
+                return;
+            }
             cube.draw(c, now, store.observatoryBatterySaver());
             drawOrbit(c, sec, acc, 2);
             dateKeyUpdate(now);
@@ -1412,6 +1425,15 @@ public class LauncherView extends View {
 
     @Override public boolean onTouchEvent(MotionEvent e) {
         float x = e.getX(), y = e.getY();
+        if (consumeTouch) {            // this gesture only dismissed the focused cube face
+            if (e.getActionMasked() == MotionEvent.ACTION_UP || e.getActionMasked() == MotionEvent.ACTION_CANCEL) consumeTouch = false;
+            return true;
+        }
+        if (e.getActionMasked() == MotionEvent.ACTION_DOWN && builtCube && cube != null && cube.focused() && !cube.contains(x, y)) {
+            cube.dismiss(System.currentTimeMillis());
+            consumeTouch = true;
+            return true;
+        }
         if (vaultOpen && e.getActionMasked() == MotionEvent.ACTION_DOWN) {
             vaultExpiresAt = System.currentTimeMillis() + VAULT_IDLE_TIMEOUT_MS;
         }

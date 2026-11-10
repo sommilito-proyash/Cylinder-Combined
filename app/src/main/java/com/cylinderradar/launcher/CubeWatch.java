@@ -68,7 +68,7 @@ final class CubeWatch {
     private boolean eco = false;
 
     // ------------------------------------------------------------------ interaction state
-    private static final int ST_SWAY = 0, ST_TWEEN = 1, ST_HOLD = 2, ST_DRAG = 3, ST_COAST = 4;
+    private static final int ST_SWAY = 0, ST_TWEEN = 1, ST_HOLD = 2, ST_DRAG = 3, ST_COAST = 4, ST_TUMBLE = 5;
     private int st = ST_SWAY;
     private long stSince = 0L;
     private final float[] tweenFrom = new float[4], tweenTo = new float[4];
@@ -153,8 +153,9 @@ final class CubeWatch {
         strokeP.setStyle(Paint.Style.STROKE);
         try {
             SharedPreferences sp = ctx.getSharedPreferences("cube_watch", 0);
-            forecastPacked = sp.getString("fc", "");
-            forecastAt = sp.getLong("fc_at", 0L);
+            String cached = sp.getString("fc", "");
+            long cachedAt = sp.getLong("fc_at", 0L);
+            if (!cached.isEmpty()) { applyLive(cached); forecastAt = cachedAt; }
         } catch (Throwable ignored) { }
         setOrientation(swayQuat(0.0));
     }
@@ -176,9 +177,13 @@ final class CubeWatch {
     private static String safe(String s) { return s == null ? "" : s; }
 
     boolean contains(float x, float y) {
-        float dx = x - cx, dy = y - cy, r = half * 1.45f;
-        return dx * dx + dy * dy <= r * r;
+        float dx = x - hitCx, dy = y - hitCy;
+        return dx * dx + dy * dy <= hitR * hitR;
     }
+    /** Where the focused (opaque) face should come to rest on screen. */
+    void setFocusCenter(float x, float y) { focusCx = x; focusCy = y; }
+    boolean focused() { return focus > 0.02f; }
+    float focusAmount() { return smooth(focus); }
     /** Finger down on the cube. */
     void beginDrag(long now) { st = ST_DRAG; stSince = now; velX = velY = 0f; faceIdx = -1; }
     void dragBy(float dx, float dy) {
@@ -192,13 +197,34 @@ final class CubeWatch {
         velX = Math.max(-9f, Math.min(9f, vxPxPerSec * k)); velY = Math.max(-9f, Math.min(9f, vyPxPerSec * k));
         st = ST_COAST; stSince = now;
     }
-    /** A tap flips the cube to its next face (Watch → Weather → Forecast → Calendar → World time → Movement). */
+    /** A tap rolls the cube like a die; it lands on a random face, which turns opaque and comes to the front. */
     void tap(long now) {
-        faceIdx = (faceIdx + 1) % 6;
+        if (st == ST_TUMBLE && now - stSince < 600L) return;
+        int f;
+        do { f = rnd.nextInt(6); } while (f == focusFace && focus > 0.5f);
+        faceIdx = f; focusFace = f;
         tweenFrom[0] = q[0]; tweenFrom[1] = q[1]; tweenFrom[2] = q[2]; tweenFrom[3] = q[3];
-        float[] f = FACE_VIEW[faceIdx];
-        eulerYXZ(f[0], f[1], f[2], tweenTo);
-        st = ST_TWEEN; stSince = now;
+        float[] fv = FACE_VIEW[f];
+        eulerYXZ(fv[0], fv[1], fv[2], tweenTo);
+        float ax = rnd.nextFloat() * 2f - 1f, ay = rnd.nextFloat() * 2f - 1f, az = rnd.nextFloat() * 2f - 1f;
+        float n = (float) Math.sqrt(ax * ax + ay * ay + az * az);
+        if (n < 0.2f) { ax = 1f; ay = 0.6f; az = 0.3f; n = (float) Math.sqrt(1.45f); }
+        tumbleAxis[0] = ax / n; tumbleAxis[1] = ay / n; tumbleAxis[2] = az / n;
+        tumbleN = 2 + rnd.nextInt(2);
+        returning = false;
+        st = ST_TUMBLE; stSince = now;
+    }
+    /** Leave the focused face and resume the slow spin. */
+    void dismiss(long now) {
+        if (st == ST_HOLD || st == ST_TUMBLE) startReturn(now);
+    }
+    private void startReturn(long now) {
+        double t = (now - phase0) / 1000.0;
+        tweenFrom[0] = q[0]; tweenFrom[1] = q[1]; tweenFrom[2] = q[2]; tweenFrom[3] = q[3];
+        st = ST_TWEEN; stSince = now; faceIdx = -1;
+        float[] sq = swayQuat(t + 1.0);
+        tweenTo[0] = sq[0]; tweenTo[1] = sq[1]; tweenTo[2] = sq[2]; tweenTo[3] = sq[3];
+        returning = true;
     }
     boolean interacting() { return st != ST_SWAY; }
 
@@ -295,17 +321,24 @@ final class CubeWatch {
                 float k = smooth(secs / 0.9f);
                 slerp(tweenFrom, tweenTo, k, qt);
                 setOrientation(qt);
-                if (secs >= 0.9f) { st = ST_HOLD; stSince = now; }
+                if (secs >= 0.9f) {
+                    if (returning) { st = ST_SWAY; returning = false; }      // back to the slow spin
+                    else { st = ST_HOLD; stSince = now; }
+                }
+                break;
+            }
+            case ST_TUMBLE: {
+                float k = Math.min(1f, secs / TUMBLE_SECS), inv = 1f - k, e = 1f - inv * inv * inv;
+                slerp(tweenFrom, tweenTo, e, qt);
+                float a = TAU * tumbleN * e, sa = (float) Math.sin(a / 2), ca = (float) Math.cos(a / 2);
+                qa[0] = tumbleAxis[0] * sa; qa[1] = tumbleAxis[1] * sa; qa[2] = tumbleAxis[2] * sa; qa[3] = ca;
+                qmul(qa, qt, qb);
+                setOrientation(qb);
+                if (k >= 1f) { st = ST_HOLD; stSince = now; }
                 break;
             }
             case ST_HOLD:
-                if (secs > 7.5f) {                       // glide back to the gentle sway pose
-                    tweenFrom[0] = q[0]; tweenFrom[1] = q[1]; tweenFrom[2] = q[2]; tweenFrom[3] = q[3];
-                    st = ST_TWEEN; stSince = now; faceIdx = -1;
-                    float[] sq = swayQuat(t + 1.0);
-                    tweenTo[0] = sq[0]; tweenTo[1] = sq[1]; tweenTo[2] = sq[2]; tweenTo[3] = sq[3];
-                    returning = true;
-                }
+                if (secs > (focusFace >= 0 ? HOLD_FOCUS_SECS : HOLD_COAST_SECS)) startReturn(now);
                 break;
             case ST_COAST: {
                 spin(velX * dt, velY * dt);
@@ -318,12 +351,22 @@ final class CubeWatch {
         }
         if (st == ST_TWEEN && returning) {
             // the sway pose keeps moving: aim at where it will be
-            float[] sq = swayQuat(t + 0.4);
+            float[] sq = swayQuat(t + Math.max(0f, 0.9f - secs));      // aim where the spin will be when the glide ends
             tweenTo[0] = sq[0]; tweenTo[1] = sq[1]; tweenTo[2] = sq[2]; tweenTo[3] = sq[3];
-            if (secs >= 0.9f) { st = ST_SWAY; returning = false; }
         } else if (st != ST_TWEEN) returning = false;
+        // the landed face fades in as the die comes to rest, and fades out when the spin resumes
+        float tgt = (st == ST_HOLD && focusFace >= 0) ? 1f : (st == ST_TUMBLE && secs > 1.15f) ? 1f : 0f;
+        focus += (tgt - focus) * Math.min(1f, dt * (tgt > focus ? 5f : 4f));
+        if (focus < 0.01f && tgt == 0f && st != ST_TUMBLE) { focus = 0f; if (st != ST_HOLD) focusFace = -1; }
     }
     private boolean returning = false;
+    // dice-roll + focus
+    private final java.util.Random rnd = new java.util.Random();
+    private final float[] tumbleAxis = new float[3];
+    private int tumbleN = 2, focusFace = -1;
+    private float focus = 0f, focusCx, focusCy;
+    private float hitCx, hitCy, hitR;
+    private static final float TUMBLE_SECS = 1.8f, HOLD_FOCUS_SECS = 10f, HOLD_COAST_SECS = 3f;
 
     // =================================================================================================
     // Projection
@@ -1053,9 +1096,18 @@ final class CubeWatch {
         eulerYXZ(0.10f * (float) Math.sin(wt * 0.31) + 0.5f * tiltX, -0.22f * (float) Math.sin(wt * 0.23) - 0.5f * tiltY, 0f, qw);
         qToM(qw, Rw);
         // keep the contact corner exactly on the cylinder lid whatever the pose
-        RA = R; cx = cx0; cy = cy0;
+        RA = R; cx = cx0; cy = cy0; focal = CAMD * unit;
         cubeProj(-HALF, -HALF, -HALF);
-        cx += cx0 - prx; cy += (cy0 + 1.7320508f * half) - pry;
+        // the contact-corner pin only applies while the cube stands (near) on its corner; a rolling cube stays centred in the sphere
+        float down = (R[3] + R[4] + R[5]) / 1.7320508f;
+        float pin = smooth((down - 0.825f) / (0.989f - 0.825f));
+        float ccx = cx0 + pin * (cx0 - prx), ccy = cy0 + pin * (cy0 + 1.7320508f * half - pry);
+        float fz = smooth(focus);
+        cx = ccx + (focusCx - ccx) * fz; cy = ccy + (focusCy - ccy) * fz;
+        focal = CAMD * unit * (1f + 0.5f * fz);
+        float sphereR = SPH * unit;
+        hitCx = fz > 0.5f ? cx : cx0; hitCy = fz > 0.5f ? cy : cy0;
+        hitR = fz > 0.5f ? half * 1.9f : sphereR;
         frontView = Rw[8] >= 0f;
         float nx = Rw[2], ny = Rw[5], nz = Rw[8];
         float l = Math.abs(nx * -0.30f + ny * 0.42f + nz * 0.85f);
@@ -1068,12 +1120,61 @@ final class CubeWatch {
             cubeProj(x, y, z);
             cX[i] = prx; cY[i] = pry; cS[i] = prs; cZ[i] = prz;
         }
+        drawSphere(c, false, 1f - fz, sphereR);
         drawFaces(c, false);
         drawEdges(c, false);
         // watch parts (painter's order)
         drawEngine(c);
         drawEdges(c, true);
         drawFaces(c, true);
+        drawSphere(c, true, 1f - fz, sphereR);
+    }
+
+    // ---- glass sphere around the cube ------------------------------------------------------------------
+    private static final float SPH = 678f;
+    private android.graphics.RadialGradient sphBody, sphRim;
+    private float sphKey = -1f;
+    private final android.graphics.RectF sphRect = new android.graphics.RectF();
+    private void drawSphere(Canvas c, boolean front, float sa, float r) {
+        if (sa <= 0.02f) return;
+        float key = r + cx0 * 0.001f + cy0 * 0.0001f;
+        if (key != sphKey) {
+            sphKey = key;
+            sphBody = new android.graphics.RadialGradient(cx0, cy0, r, new int[]{al(0xFF9FD8FF, 0x03), al(0xFF9FD8FF, 0x10), al(0xFFBFE8FF, 0x2A)}, new float[]{0f, 0.78f, 1f}, Shader.TileMode.CLAMP);
+            sphRim = new android.graphics.RadialGradient(cx0, cy0, r, new int[]{0x00FFFFFF, al(0xFFDDF4FF, 0x16), al(0xFFDDF4FF, 0x70)}, new float[]{0.82f, 0.94f, 1f}, Shader.TileMode.CLAMP);
+        }
+        fillP.setStyle(Paint.Style.FILL);
+        if (!front) {
+            fillP.setShader(sphBody); fillP.setAlpha((int) (255 * sa));
+            c.drawCircle(cx0, cy0, r, fillP);
+            // soft pool of light where the sphere rests on the cylinder lid
+            sphRect.set(cx0 - r * 0.55f, cy0 + r * 0.93f, cx0 + r * 0.55f, cy0 + r * 1.07f);
+            fillP.setShader(null); fillP.setColor(al(accent, (int) (0x30 * sa)));
+            c.drawOval(sphRect, fillP);
+            fillP.setAlpha(255);
+            return;
+        }
+        fillP.setShader(sphRim); fillP.setAlpha((int) (255 * sa));
+        c.drawCircle(cx0, cy0, r, fillP);
+        fillP.setShader(null); fillP.setAlpha(255);
+        strokeP.setShader(null); strokeP.setStyle(Paint.Style.STROKE);
+        strokeP.setStrokeWidth(Math.max(1.4f, r * 0.006f));
+        strokeP.setColor(al(0xFFE8F8FF, (int) (0x90 * sa)));
+        c.drawCircle(cx0, cy0, r, strokeP);
+        // specular highlights
+        fillP.setStyle(Paint.Style.FILL);
+        c.save(); c.rotate(-38f, cx0 - r * 0.46f, cy0 - r * 0.58f);
+        sphRect.set(cx0 - r * 0.72f, cy0 - r * 0.70f, cx0 - r * 0.20f, cy0 - r * 0.46f);
+        fillP.setColor(al(0xFFFFFFFF, (int) (0x30 * sa))); c.drawOval(sphRect, fillP);
+        sphRect.set(cx0 - r * 0.62f, cy0 - r * 0.64f, cx0 - r * 0.34f, cy0 - r * 0.54f);
+        fillP.setColor(al(0xFFFFFFFF, (int) (0x58 * sa))); c.drawOval(sphRect, fillP);
+        c.restore();
+        // faint reflection along the lower right
+        strokeP.setStrokeWidth(Math.max(2f, r * 0.02f)); strokeP.setStrokeCap(Paint.Cap.ROUND);
+        strokeP.setColor(al(0xFFFFFFFF, (int) (0x22 * sa)));
+        sphRect.set(cx0 - r * 0.9f, cy0 - r * 0.9f, cx0 + r * 0.9f, cy0 + r * 0.9f);
+        c.drawArc(sphRect, 18f, 38f, false, strokeP);
+        strokeP.setStrokeCap(Paint.Cap.BUTT);
     }
     private final float[] cX = new float[8], cY = new float[8], cS = new float[8], cZ = new float[8];
 
@@ -1138,8 +1239,10 @@ final class CubeWatch {
         return R[6] * FN[f][0] + R[7] * FN[f][1] + R[8] * FN[f][2];
     }
     private void drawFaces(Canvas c, boolean front) {
-        for (int pass = 0; pass < 6; pass++) {
-            int f = pass;
+        for (int pass = 0; pass < 7; pass++) {
+            int f;
+            if (pass < 6) { f = pass; if (front && f == focusFace) continue; }       // the focused face is drawn last, on top
+            else { if (!front || focusFace < 0) break; f = focusFace; }
             float nzc = faceCamZ(f);
             boolean facing = nzc > 0f;
             if (facing != front) continue;
@@ -1178,7 +1281,8 @@ final class CubeWatch {
             cubeProj(X, Y, Z);
             meshV[idx++] = prx; meshV[idx++] = pry;
         }
-        bmpP.setAlpha((int) (140 * Math.min(1f, nzc * 2.4f)));
+        float fa = (f == focusFace) ? smooth(focus) : 0f;
+        bmpP.setAlpha((int) (255 * Math.min(1f, nzc * 2.4f) * (0.5f + 0.5f * fa)));
         c.drawBitmapMesh(panel[f], MESH, MESH, meshV, 0, null, 0, bmpP);
     }
 
@@ -1187,13 +1291,15 @@ final class CubeWatch {
     // =================================================================================================
     private void refreshPanels(long now) {
         int sec = (int) (now / 1000L), min = (int) (now / 60000L), day = cal.get(Calendar.DAY_OF_YEAR) + cal.get(Calendar.YEAR) * 400;
+        int tick4 = (int) (now / 250L);
         if (day != lastDayPanel) { lastDayPanel = day; panelDirty[F_LEFT] = true; panelDirty[F_FRONT] = true; }
-        if (min != lastMinPanel) { lastMinPanel = min; panelDirty[F_BACK] = true; panelDirty[F_RIGHT] = true; panelDirty[F_FRONT] = true; }
-        if (sec != lastSecPanel) { lastSecPanel = sec; if (faceCamZ(F_TOP) > 0f) panelDirty[F_TOP] = true; }
-        if (!panelDirty[F_TOP] && faceCamZ(F_TOP) > 0f && !topDrawnOnce) panelDirty[F_TOP] = true;
+        if (min != lastMinPanel) { lastMinPanel = min; panelDirty[F_BACK] = true; panelDirty[F_RIGHT] = true; panelDirty[F_FRONT] = true; panelDirty[F_LEFT] = true; }
+        if (sec != lastSecPanel) { lastSecPanel = sec; panelDirty[F_TOP] = true; panelDirty[F_FRONT] = true; }
+        if (tick4 != lastTick4) { lastTick4 = tick4; panelDirty[F_BOTTOM] = true; }
+        if (now - batteryAt > 30000L) readBattery(now);
         for (int f = 0; f < 6; f++) {
             if (!panelDirty[f]) continue;
-            if (f != F_FRONT && f != F_BOTTOM && faceCamZ(f) <= 0f && everDrawn[f]) continue;      // not visible: postpone
+            if (faceCamZ(f) <= 0f && everDrawn[f]) continue;      // not visible: redraw when it turns toward the viewer
             panelDirty[f] = false; everDrawn[f] = true;
             Canvas pc = panelCv[f];
             pc.save();
@@ -1203,12 +1309,26 @@ final class CubeWatch {
                 case F_BACK: panelWeather(pc); break;
                 case F_RIGHT: panelForecast(pc); break;
                 case F_LEFT: panelCalendar(pc); break;
-                case F_TOP: panelWorld(pc); topDrawnOnce = true; break;
+                case F_TOP: panelWorld(pc); break;
                 default: panelMovement(pc); break;
             }
             pc.restore();
         }
         maybeFetchForecast(now);
+    }
+    private int lastTick4 = -1;
+    private int batPct = -1; private boolean batCharging = false; private long batteryAt = 0L;
+    private void readBattery(long now) {
+        batteryAt = now;
+        try {
+            android.content.Intent i = ctx.registerReceiver(null, new android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED));
+            if (i != null) {
+                int lvl = i.getIntExtra("level", -1), sc = i.getIntExtra("scale", 100), status = i.getIntExtra("status", -1);
+                batPct = sc > 0 && lvl >= 0 ? lvl * 100 / sc : -1;
+                batCharging = status == 2 || status == 5;
+                panelDirty[F_FRONT] = true;
+            }
+        } catch (Throwable ignored) { }
     }
     private final boolean[] everDrawn = new boolean[6];
     private boolean topDrawnOnce = false;
@@ -1222,7 +1342,7 @@ final class CubeWatch {
     private void frameCard(Canvas pc, int f, String title, int accentCol, String sub) {
         erase(f);
         RectF r = new RectF(28, 28, 1024 - 28, 1024 - 28);
-        fillP.setShader(null); fillP.setStyle(Paint.Style.FILL); fillP.setColor(0x94090F16);
+        fillP.setShader(null); fillP.setStyle(Paint.Style.FILL); fillP.setColor(0xF2090F16);
         pc.drawRoundRect(r, 44, 44, fillP);
         strokeP.setShader(null); strokeP.setStrokeWidth(3f); strokeP.setColor(accentCol); strokeP.setStyle(Paint.Style.STROKE);
         pc.drawRoundRect(r, 44, 44, strokeP);
@@ -1260,8 +1380,10 @@ final class CubeWatch {
         String[] dn = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
         String[] mn = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"};
         chip(pc, 44, 44, 330, dn[cal.get(Calendar.DAY_OF_WEEK) - 1], cal.get(Calendar.DAY_OF_MONTH) + " " + mn[cal.get(Calendar.MONTH)], GOLD);
-        String t = temp.isEmpty() ? "—" : temp + "° " + condText(wCode);
-        chip(pc, 1024 - 44 - 330, 44, 330, t, city, BARREL);
+        String t = !Double.isNaN(curTemp) ? fmt1(curTemp) + "\u00B0 " + condText(curCode) : temp.isEmpty() ? "\u2014" : temp + "\u00B0 " + condText(wCode);
+        chip(pc, 1024 - 44 - 330, 44, 330, t, curPlace.isEmpty() ? city : curPlace, BARREL);
+        chip(pc, 44, 1024 - 44 - 104, 330, batPct >= 0 ? batPct + "%" + (batCharging ? "  \u26A1" : "") : "\u2014", "Battery", batPct >= 0 && batPct <= 20 ? RUBY : THIRD);
+        chip(pc, 1024 - 44 - 330, 1024 - 44 - 104, 330, two(cal.get(Calendar.HOUR_OF_DAY)) + ":" + two(cal.get(Calendar.MINUTE)) + ":" + two(cal.get(Calendar.SECOND)), "Local time \u00B7 live", BALANCE);
     }
     private void chip(Canvas pc, float a, float b, float w, String l1, String l2, int col) {
         RectF r = new RectF(a, b, a + w, b + 104);
@@ -1271,16 +1393,25 @@ final class CubeWatch {
         text(pc, l2, a + 24, b + 86, 28f, DIM, false, Paint.Align.LEFT);
     }
 
+    private void liveDot(Canvas pc, int col) {
+        boolean on = (System.currentTimeMillis() / 500L) % 2L == 0L;
+        fillP.setShader(null); fillP.setStyle(Paint.Style.FILL);
+        fillP.setColor(al(col, on ? 0xFF : 0x55)); pc.drawCircle(1024 - 150, 108, 13, fillP);
+        text(pc, "LIVE", 1024 - 124, 118, 30f, col, true, Paint.Align.LEFT);
+    }
     private void panelWeather(Canvas pc) {
-        frameCard(pc, F_BACK, "Weather", BARREL, city + " · now");
+        frameCard(pc, F_BACK, "Weather", BARREL, (curPlace.isEmpty() ? city : curPlace) + " \u00B7 now");
+        liveDot(pc, THIRD);
         boolean night = cal.get(Calendar.HOUR_OF_DAY) >= 18 || cal.get(Calendar.HOUR_OF_DAY) < 6;
+        int code = Double.isNaN(curTemp) ? wCode : curCode;
+        String tt = !Double.isNaN(curTemp) ? fmt1(curTemp) : temp;
         fillP.setStyle(Paint.Style.FILL); fillP.setShader(null);
-        if (night && (wCode <= 1)) {
+        if (night && code <= 1) {
             fillP.setColor(0xFFFFE9A8); pc.drawCircle(320, 440, 112, fillP);
             fillP.setColor(0xFF090F16); pc.drawCircle(368, 410, 98, fillP);
             fillP.setColor(0xFFFFE9A8);
             pc.drawCircle(430, 360, 5, fillP); pc.drawCircle(470, 450, 4, fillP); pc.drawCircle(400, 520, 3, fillP);
-        } else if (wCode <= 1) {
+        } else if (code <= 1) {
             fillP.setColor(0xFFFFC83D); pc.drawCircle(320, 440, 90, fillP);
             strokeP.setStyle(Paint.Style.STROKE); strokeP.setStrokeWidth(10f); strokeP.setColor(0xFFFFC83D); strokeP.setStrokeCap(Paint.Cap.ROUND);
             for (int i = 0; i < 12; i++) { double a = i * Math.PI / 6; pc.drawLine(320 + (float) Math.cos(a) * 112, 440 + (float) Math.sin(a) * 112, 320 + (float) Math.cos(a) * 140, 440 + (float) Math.sin(a) * 140, strokeP); }
@@ -1290,18 +1421,19 @@ final class CubeWatch {
             pc.drawCircle(220, 470, 70, fillP); pc.drawCircle(310, 430, 95, fillP); pc.drawCircle(410, 480, 72, fillP);
             pc.drawRoundRect(new RectF(190, 470, 460, 546), 38, 38, fillP);
         }
-        text(pc, temp.isEmpty() ? "—" : temp + "°", 520, 540, 250f, INK, true, Paint.Align.LEFT);
+        text(pc, tt.isEmpty() ? "\u2014" : tt + "\u00B0", 520, 540, 250f, INK, true, Paint.Align.LEFT);
         text(pc, "Celsius", 540, 590, 34f, DIM, false, Paint.Align.LEFT);
-        text(pc, condText(wCode), 80, 700, 72f, INK, true, Paint.Align.LEFT);
+        text(pc, condText(code), 80, 690, 70f, INK, true, Paint.Align.LEFT);
+        if (!Double.isNaN(curTemp)) {
+            text(pc, "Feels like " + fmt1(curFeels) + "\u00B0", 80, 760, 40f, INK, true, Paint.Align.LEFT);
+            text(pc, "Humidity " + curHum + "%", 80, 818, 40f, INK, true, Paint.Align.LEFT);
+            text(pc, "Wind " + fmt1(curWind) + " km/h", 520, 818, 40f, INK, true, Paint.Align.LEFT);
+        }
         double[] fc = forecastRow(0);
         if (fc != null) {
-            text(pc, "High " + fmt1(fc[0]) + "°", 80, 790, 44f, INK, true, Paint.Align.LEFT);
-            text(pc, "Low " + fmt1(fc[1]) + "°", 500, 790, 44f, INK, true, Paint.Align.LEFT);
-            text(pc, "Chance of rain " + (int) fc[2] + "%", 80, 860, 44f, INK, true, Paint.Align.LEFT);
-            fillP.setColor(0x33C4D2E0); pc.drawRoundRect(new RectF(640, 828, 940, 846), 9, 9, fillP);
-            fillP.setColor(BARREL); pc.drawRoundRect(new RectF(640, 828, 640 + 300f * (float) fc[2] / 100f + 9, 846), 9, 9, fillP);
-        } else text(pc, "Forecast not loaded yet", 80, 790, 40f, DIM, false, Paint.Align.LEFT);
-        text(pc, "Updated " + ageText(wAt), 80, 948, 28f, DIM, false, Paint.Align.LEFT);
+            text(pc, "Today  High " + fmt1(fc[0]) + "\u00B0   Low " + fmt1(fc[1]) + "\u00B0   Rain " + (int) fc[2] + "%", 80, 886, 36f, GOLD, true, Paint.Align.LEFT);
+        } else text(pc, "Waiting for the first live update\u2026", 80, 886, 36f, DIM, false, Paint.Align.LEFT);
+        text(pc, "Updated " + ageText(forecastAt > 0 ? forecastAt : wAt), 80, 948, 28f, DIM, false, Paint.Align.LEFT);
     }
     private static String fmt1(double v) { double r = Math.round(v * 10.0) / 10.0; return r == Math.rint(r) ? String.valueOf((long) r) : String.valueOf(r); }
 
@@ -1398,37 +1530,80 @@ final class CubeWatch {
     }
 
     private void panelMovement(Canvas pc) {
-        frameCard(pc, F_BOTTOM, "Movement", FORK, "Teeth and speed of each wheel");
-        String[][] rows = {{"Barrel", "64", "0.94 rev/hr"}, {"Centre wheel", "60", "1 rev/hr"}, {"Third wheel", "64", "7.5 rev/hr"},
-                {"Fourth wheel", "60", "1 rev/min"}, {"Escape wheel", "32", "7.5 rev/min"}, {"Balance wheel", "—", "2 swings/s"}};
-        int[] cols = {BARREL, CENTER, THIRD, FOURTH, ESCAPE, BALANCE};
-        text(pc, "Wheel", 130, 270, 28f, DIM, false, Paint.Align.LEFT); text(pc, "Teeth", 560, 270, 28f, DIM, false, Paint.Align.LEFT); text(pc, "Speed", 680, 270, 28f, DIM, false, Paint.Align.LEFT);
-        for (int i = 0; i < 6; i++) {
-            float y = 340 + i * 90;
-            fillP.setShader(null); fillP.setStyle(Paint.Style.FILL); fillP.setColor(cols[i]); pc.drawCircle(94, y - 14, 16, fillP);
-            text(pc, rows[i][0], 130, y, 40f, INK, true, Paint.Align.LEFT);
-            text(pc, rows[i][1], 560, y, 40f, INK, true, Paint.Align.LEFT);
-            text(pc, rows[i][2], 680, y, 32f, GOLD, false, Paint.Align.LEFT);
+        frameCard(pc, F_BOTTOM, "Movement", FORK, "Live readings of the running calibre");
+        liveDot(pc, FORK);
+        long msDay = (System.currentTimeMillis() + TimeZone.getDefault().getOffset(System.currentTimeMillis())) % 86400000L;
+        long beats = msDay * 4L / 1000L;
+        float swing = balRot * 180f / PI;                       // balance angle in degrees
+        int tooth = (int) (((thE / TAU) % 1f + 1f) % 1f * 32f);
+        String[][] rows = {
+                {"Beat count today", String.valueOf(beats), String.valueOf(BARREL)},
+                {"Balance angle", (swing >= 0 ? "+" : "") + Math.round(swing) + "\u00B0", String.valueOf(BALANCE)},
+                {"Escape wheel tooth", (tooth + 1) + " / 32", String.valueOf(ESCAPE)},
+                {"Fork angle", fmt1(forkRot / DEG) + "\u00B0", String.valueOf(FORK)},
+                {"Seconds hand", two(cal.get(Calendar.SECOND)) + "." + (int) ((System.currentTimeMillis() % 1000L) / 100L) + " s", String.valueOf(FOURTH)},
+                {"Centre wheel", fmt1((float) ((sRaw % 3600.0) / 10.0)) + "\u00B0 / h", String.valueOf(CENTER)}};
+        for (int i = 0; i < rows.length; i++) {
+            float y = 300 + i * 74;
+            fillP.setShader(null); fillP.setStyle(Paint.Style.FILL); fillP.setColor(Integer.parseInt(rows[i][2]));
+            pc.drawCircle(94, y - 14, 15, fillP);
+            text(pc, rows[i][0], 130, y, 38f, INK, true, Paint.Align.LEFT);
+            mono(pc, rows[i][1], 1024 - 80, y, 42f, GOLD, Paint.Align.RIGHT);
         }
-        text(pc, "Beat: 4 per second · 14,400 A/h", 80, 900, 38f, INK, true, Paint.Align.LEFT);
-        text(pc, "Centre : escape = 1 : 450 · one tooth per beat", 80, 948, 30f, DIM, false, Paint.Align.LEFT);
+        // live balance-wheel oscillation trace (2 Hz)
+        float x0 = 80, x1 = 944, yc = 800, amp = 70;
+        strokeP.setShader(null); strokeP.setStyle(Paint.Style.STROKE); strokeP.setStrokeWidth(2f); strokeP.setColor(0x40C4D2E0);
+        pc.drawLine(x0, yc, x1, yc, strokeP);
+        tmp.reset();
+        double tNow = System.currentTimeMillis() / 1000.0;
+        for (int i = 0; i <= 120; i++) {
+            double tt = tNow - (120 - i) * 0.0125;
+            float y = yc - amp * (float) Math.sin(TAU * 2.0 * (tt % 1000.0));
+            float x = x0 + (x1 - x0) * i / 120f;
+            if (i == 0) tmp.moveTo(x, y); else tmp.lineTo(x, y);
+        }
+        strokeP.setStrokeWidth(4f); strokeP.setColor(BALANCE); pc.drawPath(tmp, strokeP);
+        fillP.setColor(0xFFFFFFFF); pc.drawCircle(x1, yc - amp * (float) Math.sin(TAU * 2.0 * (tNow % 1000.0)), 9, fillP);
+        text(pc, "Balance wheel \u00B7 4 beats per second \u00B7 14,400 A/h", 80, 948, 28f, DIM, false, Paint.Align.LEFT);
     }
 
     // =================================================================================================
     // Forecast download (Open-Meteo, keyless) — cached on the device
     // =================================================================================================
     private void maybeFetchForecast(long now) {
-        if (now - forecastTry < 3L * 3600_000L && !forecastPacked.isEmpty()) return;
-        if (now - forecastTry < 5L * 60_000L) return;           // retry no more often than every 5 minutes
-        forecastTry = now;
+        long wall = System.currentTimeMillis();
+        boolean cityChanged = !city.equals(fetchedCity);
+        long gap = cityChanged ? 20_000L : (forecastAt > 0L && wall - forecastAt < 3600_000L ? 10 * 60_000L : 2 * 60_000L);
+        if (fetching || wall - forecastTry < gap) return;
+        forecastTry = wall; fetching = true;
         final String cityNow = city;
         WeatherService.fetchDaily(cityNow, new WeatherService.DailyCallback() {
             @Override public void onResult(String packed) {
-                forecastPacked = packed; forecastAt = System.currentTimeMillis();
-                panelDirty[F_BACK] = true; panelDirty[F_RIGHT] = true;
+                applyLive(packed); fetchedCity = cityNow; fetching = false;
                 try { ctx.getSharedPreferences("cube_watch", 0).edit().putString("fc", packed).putLong("fc_at", forecastAt).apply(); } catch (Throwable ignored) { }
             }
-            @Override public void onError() { }
+            @Override public void onError() { fetching = false; }
         });
+    }
+    private volatile boolean fetching = false;
+    private String fetchedCity = "";
+    private double curTemp = Double.NaN, curWind, curFeels;
+    private int curCode = -1, curHum;
+    private String curPlace = "";
+    /** packed = optional "C|temp|code|wind|humidity|feels|place" row followed by daily rows. */
+    private void applyLive(String packed) {
+        String days = packed;
+        if (packed.startsWith("C|")) {
+            int semi = packed.indexOf(';');
+            String row = semi < 0 ? packed : packed.substring(0, semi);
+            days = semi < 0 ? "" : packed.substring(semi + 1);
+            String[] f = row.split("\\|");
+            try {
+                curTemp = Double.parseDouble(f[1]); curCode = Integer.parseInt(f[2]); curWind = Double.parseDouble(f[3]);
+                curHum = Integer.parseInt(f[4]); curFeels = Double.parseDouble(f[5]); curPlace = f.length > 6 ? f[6] : "";
+            } catch (Exception ignored) { }
+        }
+        forecastPacked = days; forecastAt = System.currentTimeMillis();
+        panelDirty[F_BACK] = true; panelDirty[F_RIGHT] = true; panelDirty[F_FRONT] = true;
     }
 }
