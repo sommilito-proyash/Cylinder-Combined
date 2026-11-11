@@ -7,8 +7,8 @@ android {
         applicationId 'com.cylinderradar.launcher'
         minSdk 26
         targetSdk 34
-        versionCode 22
-        versionName '2.9.0-sphere-dice-hud'
+        versionCode 23
+        versionName '2.9.1-sphere-fit'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8

@@ -625,8 +625,8 @@ public class LauncherView extends View {
             orbCy = ty;
             orbRx = rw * 0.96f;
             orbRy = orbRx * 0.20f;
-            cubeHalf = Math.min(w * 0.19f, h * 0.092f);
-            cubeCy = ty - cubeHalf * 1.784f;     // glass sphere resting on the lid; the cube balances on one corner inside it
+            cubeHalf = Math.min(w * 0.175f, h * 0.085f);
+            cubeCy = ty - CubeWatch.sphereRadiusPx(cubeHalf);     // glass sphere resting on the lid; the cube balances on one corner inside it
         } else {
             orbCy = h * 0.31f;
             orbRx = rw * 0.80f;

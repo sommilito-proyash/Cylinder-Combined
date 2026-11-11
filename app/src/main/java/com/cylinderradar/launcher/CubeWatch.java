@@ -1101,11 +1101,33 @@ final class CubeWatch {
         // the contact-corner pin only applies while the cube stands (near) on its corner; a rolling cube stays centred in the sphere
         float down = (R[3] + R[4] + R[5]) / 1.7320508f;
         float pin = smooth((down - 0.825f) / (0.989f - 0.825f));
-        float ccx = cx0 + pin * (cx0 - prx), ccy = cy0 + pin * (cy0 + 1.7320508f * half - pry);
+        float offX = pin * (cx0 - prx), offY = pin * (cy0 + 1.7320508f * half - pry);
+        float cornerR = CAMD * unit * 658.18f / (float) Math.sqrt(CAMD * CAMD - 658.18f * 658.18f);   // widest reach of a corner
+        float room = Math.max(0f, sphereR0(half) - cornerR - 16f * unit * 0.5f) * 0.8f, offL = (float) Math.sqrt(offX * offX + offY * offY);
+        if (offL > room && offL > 1e-3f) { offX *= room / offL; offY *= room / offL; }
+        float ccx = cx0 + offX, ccy = cy0 + offY;
         float fz = smooth(focus);
         cx = ccx + (focusCx - ccx) * fz; cy = ccy + (focusCy - ccy) * fz;
         focal = CAMD * unit * (1f + 0.5f * fz);
-        float sphereR = SPH * unit;
+        float sphereR = sphereRadiusPx(half);
+        // hard guarantee: no corner (with its knob) may leave the glass sphere while it is visible
+        float lim = sphereR - 12f * unit * 1.9f;
+        for (int pass = 0; pass < 3 && fz < 0.5f; pass++) {
+            float worst = 0f, wx = 0f, wy = 0f;
+            for (int i = 0; i < 8; i++) {
+                cubeProj(((i & 1) == 0 ? -1 : 1) * HALF, ((i & 2) == 0 ? -1 : 1) * HALF, ((i & 4) == 0 ? -1 : 1) * HALF);
+                float dx = prx - cx0, dy = pry - cy0, dist = (float) Math.sqrt(dx * dx + dy * dy);
+                if (dist - lim > worst) { worst = dist - lim; wx = dx / dist; wy = dy / dist; }
+            }
+            if (worst <= 0f) break;
+            cx -= wx * worst; cy -= wy * worst;
+        }
+        float ov = -1e9f;
+        for (int i = 0; i < 8; i++) {
+            cubeProj(((i & 1) == 0 ? -1 : 1) * HALF, ((i & 2) == 0 ? -1 : 1) * HALF, ((i & 4) == 0 ? -1 : 1) * HALF);
+            float dx = prx - cx0, dy = pry - cy0; ov = Math.max(ov, (float) Math.sqrt(dx * dx + dy * dy) - sphereR);
+        }
+        lastOverflow = ov;
         hitCx = fz > 0.5f ? cx : cx0; hitCy = fz > 0.5f ? cy : cy0;
         hitR = fz > 0.5f ? half * 1.9f : sphereR;
         frontView = Rw[8] >= 0f;
@@ -1131,7 +1153,14 @@ final class CubeWatch {
     }
 
     // ---- glass sphere around the cube ------------------------------------------------------------------
-    private static final float SPH = 678f;
+    private static final float SPH = 700f;
+    /** Screen radius of the glass sphere's silhouette (perspective-correct) for a given cube half-size in pixels. */
+    static float sphereRadiusPx(float half) {
+        float focal = CAMD * half / HALF;
+        return focal * SPH / (float) Math.sqrt(CAMD * CAMD - SPH * SPH);
+    }
+    float lastOverflow = -1f;           // test hook: how far the farthest cube corner is beyond the sphere (<= 0 means inside)
+    private float sphereR0(float h) { return sphereRadiusPx(h); }
     private android.graphics.RadialGradient sphBody, sphRim;
     private float sphKey = -1f;
     private final android.graphics.RectF sphRect = new android.graphics.RectF();
